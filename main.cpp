@@ -3,14 +3,15 @@
 //
 #include <chrono>
 #include <iostream>
+#include <random>
+#include <thread>
 
-#include "clean.h"
 #include "mixmax/mixmax.h"
 #include "original.h"
+#include "clean.h"
 #include "mixmax.hpp"
-#include <random>
 
-constexpr auto iterations = 1ULL << 30;
+constexpr auto iterations = 1ULL << 40;
 
 void test_original() {
     original::rng_state_t original{{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, 1, 2};
@@ -74,7 +75,8 @@ void test_seeding() {
     const auto seed3 = std::random_device()();
     const auto seed4 = std::random_device()();
     MIXMAX::MixMaxRng240 rng{seed1, seed2, seed3, seed4};
-    mixmax_engine gen{seed1, seed2, seed3, seed4};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
+    mixmax_engine gen{seed1, seed2, seed3,
+                      seed4};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
     for (int i = 0; i < iterations; ++i) {
         if (rng() != gen()) {
             throw std::runtime_error("RNG WRONG RESULT");
@@ -96,11 +98,17 @@ void test_branching() {
 }
 
 int main(int argc, char **argv) {
-    test_branching();
-    test_original();
-    test_clean();
-    test_clean_2();
-    test_opt();
-    test_seeding();
+    std::thread t1{test_branching};
+    std::thread t2{test_seeding};
+    std::thread t3{test_original};
+    std::thread t4{test_clean};
+    std::thread t5{test_clean_2};
+    std::thread t6{test_opt};
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+    t5.join();
+    t6.join();
     return 0;
 }
