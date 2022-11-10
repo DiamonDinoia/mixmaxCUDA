@@ -11,14 +11,14 @@
 #include "clean.h"
 #include "mixmax.hpp"
 
-constexpr auto iterations = 1ULL << 40;
+constexpr auto iterations = 1ULL << 60;
 
 void test_original() {
     original::rng_state_t original{{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, 1, 2};
     original.sumtot = original::iterate_raw_vec(original.V, original.sumtot);
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < iterations; ++i) {
+    for (auto i = 0ULL; i < iterations; ++i) {
         result = original::flat(&original);
     }
     auto end = std::chrono::steady_clock::now();
@@ -32,7 +32,7 @@ void test_clean() {
     clean::rng_state_t clean{};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < iterations + 1; ++i) {
+    for (auto i = 0ULL; i < iterations + 1; ++i) {
         result = clean.get();
     }
     auto end = std::chrono::steady_clock::now();
@@ -46,7 +46,7 @@ void test_clean_2() {
     clean::rng_state_t clean{};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < iterations + 1; ++i) {
+    for (auto i = 0ULL; i < iterations + 1; ++i) {
         result = clean.get2();
     }
     auto end = std::chrono::steady_clock::now();
@@ -60,7 +60,7 @@ void test_opt() {
     MIXMAX::MixMaxRng17 rng{};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < iterations; ++i) {
+    for (auto i = 0ULL; i < iterations; ++i) {
         result = rng();
     }
     auto end = std::chrono::steady_clock::now();
@@ -77,7 +77,7 @@ void test_seeding() {
     MIXMAX::MixMaxRng240 rng{seed1, seed2, seed3, seed4};
     mixmax_engine gen{seed1, seed2, seed3,
                       seed4};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
-    for (int i = 0; i < iterations; ++i) {
+    for (auto i = 0ULL; i < iterations; ++i) {
         if (rng() != gen()) {
             throw std::runtime_error("RNG WRONG RESULT");
         }
@@ -90,7 +90,7 @@ void test_branching() {
     mixmax_engine gen{};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
     gen.seed_spbox(42);
     MIXMAX::MixMaxRng240 rng{42};
-    for (int i = 0; i < iterations; ++i) {
+    for (auto i = 0ULL; i < iterations; ++i) {
         if (rng() != gen()) {
             throw std::runtime_error("RNG WRONG RESULT");
         }
