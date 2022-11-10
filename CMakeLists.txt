@@ -106,8 +106,9 @@ target_include_directories(mixmax INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 
+find_package(Threads REQUIRED)
 add_executable(main main.cpp)
-target_link_libraries(main mixmax)
+target_link_libraries(main mixmax Threads::Threads)
 
 if (GPU)
     add_executable(main_gpu main.cu)
