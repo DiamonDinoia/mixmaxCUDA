@@ -59,7 +59,7 @@ if (CMAKE_BUILD_TYPE MATCHES Debug)
     set(FLAGS -O0 -fstack-protector-all -Wall -Wextra -pedantic)
     add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:-G>")
 elseif (CMAKE_BUILD_TYPE MATCHES Release)
-    set(FLAGS -fcx-limited-range -ffp-contract=fast -freciprocal-math
+    set(FLAGS -O3 -fcx-limited-range -ffp-contract=fast -freciprocal-math
             -fmerge-all-constants -fno-math-errno -march=native -funroll-loops
             -ftree-vectorize)
 elseif (CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
@@ -102,7 +102,9 @@ if (GPU)
 endif ()
 
 add_library(mixmax INTERFACE)
-target_include_directories(mixmax INTERFACE include)
+target_include_directories(mixmax INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 
 add_executable(main main.cpp)
 target_link_libraries(main mixmax)
@@ -110,5 +112,4 @@ target_link_libraries(main mixmax)
 if (GPU)
     add_executable(main_gpu main.cu)
     target_link_libraries(main_gpu mixmax)
-    set_target_properties(main_gpu PROPERTIES CMAKE_CUDA_SEPARABLE_COMPILATION ON)
 endif ()

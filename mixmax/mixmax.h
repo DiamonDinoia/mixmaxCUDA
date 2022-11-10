@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <ostream>
 
-namespace RNG {
+namespace MIXMAX {
 
 namespace {
 
@@ -30,19 +30,19 @@ namespace {
 
 #endif
 
-#define likely(expr) __builtin_expect(!!(expr), 1)
 };  // namespace
 
-template <uint8_t M, uint8_t N = M - 1>
+template <uint8_t M>
 class MIXMAX_CLASS_ALIGN MixMaxRng {
    public:
     MIXMAX_HOST_AND_DEVICE
     MixMaxRng() {
-        for (auto& element : V) {
+        for (auto& element : m_State) {
             element = 1;
         }
-        counter    = N - 1;
-        SumOverNew = 1;
+        m_SumOverNew = 1;
+        updateState();
+        m_counter = 1;
     }
     MIXMAX_HOST_AND_DEVICE
     MixMaxRng(uint64_t seed) {
@@ -51,7 +51,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
         const uint64_t MULT64 = 6364136223846793005ULL;
         uint64_t sum_total = 0, overflow = 0;
         uint64_t l = seed;
-        for (unsigned long& i : V) {
+        for (unsigned long& i : m_State) {
             l *= MULT64;
             l = (l << 32) ^ (l >> 32);
             i = l & M61;
@@ -60,8 +60,8 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
                 overflow++;
             }
         }
-        counter    = N;  // set the counter to N if iteration should happen right away
-        SumOverNew = MOD_MERSENNE(MOD_MERSENNE(sum_total) + (overflow << 3));
+        m_counter    = N;  // set the counter to N if iteration should happen right away
+        m_SumOverNew = MOD_MERSENNE(MOD_MERSENNE(sum_total) + (overflow << 3));
 #else
         union unpack {
             struct {
@@ -108,47 +108,33 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
      */
     MIXMAX_HOST_AND_DEVICE
     inline constexpr uint64_t operator()() noexcept {
-        if (likely(counter != (N - 1))) {
-            counter += 1;
-        } else {
+        if (m_counter == N) {
             updateState();
         }
-        return V[counter];
+        return m_State[m_counter++];
     }
 
     MIXMAX_HOST_AND_DEVICE
     inline constexpr double getFloat() noexcept {
         const auto u = operator()();
-        auto f       = static_cast<const double>(u);
-        return f * INV_MERSBASE;
+        return static_cast<double>(u) * INV_MERSBASE;
     }
-
-    const uint64_t* GetV() const { return V; }
-    void setV(const uint64_t* v) {
-        for (auto i = 0; i < N; i++) {
-            V[i] = v[i];
-        }
-    }
-    uint64_t GetSumOverNew() const { return SumOverNew; }
-    void SetSumOverNew(uint64_t sum_over_new) { SumOverNew = sum_over_new; }
-    uint8_t GetCounter() const { return counter; }
-    void SetCounter(uint8_t counter) { MixMaxRng::counter = counter; }
 
    private:
-    alignas(16) uint64_t V[N];
-    uint64_t SumOverNew;
-#ifndef __CUDA_ARCH__
-    uint32_t counter;
-#else
-    uint8_t counter;
-#endif
-    //
+    // Constants
     static constexpr double INV_MERSBASE = 0.43368086899420177360298E-18;
-    static constexpr uint8_t BITS        = 61U;
-    static constexpr uint64_t M61        = 0x1FFFFFFFFFFFFFFF;
+    // The state is M-1 because the last element is stored in the variable SumOverNew outside the vector
+    static constexpr uint8_t N    = M - 1;
+    static constexpr uint8_t BITS = 61U;
+    static constexpr uint64_t M61 = 0x1FFFFFFFFFFFFFFF;
+    // RNG state
+    alignas(16) uint64_t m_State[N];
+    uint64_t m_SumOverNew;
+    uint32_t m_counter;
+    //
 
     MIXMAX_HOST_AND_DEVICE
-    static inline constexpr uint64_t Rotate_61bit(const uint64_t aVal, const std::size_t aSize) {
+    static inline constexpr uint64_t ROTATE_61(const uint64_t aVal, const std::size_t aSize) {
         return ((aVal << aSize) & M61) | (aVal >> (61 - aSize));
     }
     MIXMAX_HOST_AND_DEVICE
@@ -157,50 +143,43 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
     MIXMAX_HOST_AND_DEVICE
     inline constexpr void updateState() {
         static_assert(N == 16 || N == 7);
-        uint64_t PartialSumOverOld = V[0];
-        auto lV = V[0] = MOD_MERSENNE(SumOverNew + PartialSumOverOld);
-        SumOverNew     = MOD_MERSENNE(SumOverNew + lV);
-        if constexpr (N == 16) {
-#pragma unroll 15
-            for (int i = 1; i < N; ++i) {
-                const auto lRotatedPreviousPartialSumOverOld = Rotate_61bit(PartialSumOverOld, 36);
-                PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + V[i]);
-                lV = V[i]  = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
-                SumOverNew = MOD_MERSENNE(SumOverNew + lV);
-            }
-        } else if constexpr (N == 7) {
-#pragma unroll 6
-            for (int i = 1; i < N; ++i) {
-                const auto lRotatedPreviousPartialSumOverOld = Rotate_61bit(PartialSumOverOld, 36);
-                PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + V[i]);
-                lV = V[i]  = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
-                SumOverNew = MOD_MERSENNE(SumOverNew + lV);
-            }
+        uint64_t PartialSumOverOld = m_State[0];
+        auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
+        m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
+#ifdef __CUDA_ARCH__
+#pragma unroll N - 1
+#endif
+        for (int i = 1; i < N; ++i) {
+            const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld, 36);
+            PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
+            lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
+            m_SumOverNew    = MOD_MERSENNE(m_SumOverNew + lV);
         }
-        counter = 0;
+        m_counter = 0;
     }
 
 #if defined(__x86_64__)
     MIXMAX_HOST_AND_DEVICE
-    inline static constexpr uint64_t mod128(__uint128_t s) {
-        uint64_t s1 = ((((uint64_t)s) & M61) + (((uint64_t)(s >> 64)) * 8) + (((uint64_t)s) >> BITS));
+    inline static constexpr uint64_t MOD_128(const __uint128_t s) {
+        uint64_t s1 = (static_cast<uint64_t>(s) & M61) + (static_cast<uint64_t>(s >> 64) * 8) +
+                      (static_cast<uint64_t>(s) >> BITS);
         return MOD_MERSENNE(s1);
     }
     MIXMAX_HOST_AND_DEVICE
-    inline static constexpr uint64_t fmodmulM61(uint64_t cum, uint64_t a, uint64_t b) {
-        __uint128_t temp = (__uint128_t)a * (__uint128_t)b + cum;
-        return mod128(temp);
+    inline static constexpr uint64_t F_MOD_MUL_M61(const uint64_t cum, const uint64_t a, const uint64_t b) {
+        const auto temp = static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b) + cum;
+        return MOD_128(temp);
     }
 #else
     MIXMAX_HOST_AND_DEVICE
-    uint64_t MixMaxRng::fmodmulM61(uint64_t cum, uint64_t s, uint64_t a) {
-        const uint64_t MASK32 = 0xFFFFFFFFULL;
-        uint64_t o, ph, pl, ah, al;
-        o = (s)*a;
-        ph = ((s) >> 32);
-        pl = (s)&MASK32;
-        ah = a >> 32;
-        al = a & MASK32;
+    inline static constexpr uint64_t F_MOD_MUL_M61(const uint64_t cum, const uint64_t s, const uint64_t a) {
+        static const uint64_t MASK32 = 0xFFFFFFFFULL;
+        //
+        auto o = (s)*a;
+        const auto ph = ((s) >> 32);
+        const auto pl = (s)&MASK32;
+        const auto ah = a >> 32;
+        const auto al = a & MASK32;
         o = (o & M61) + ((ph * ah) << 3) + ((ah * pl + al * ph + ((al * pl) >> 32)) >> 29);
         o += cum;
         o = (o & M61) + ((o >> 61));
@@ -227,68 +206,68 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
          * on-collision guarantee is absolute, not probabilistic
          */
         constexpr uint64_t skipMat17[128][17] =
-#include "mixmax_skip_N17.h"
+#include "mixmax_skip_N17.c"
             ;
         constexpr uint64_t skipMat8[128][8] =
-#include "mixmax_skip_N8.h"
+#include "mixmax_skip_N8.c"
             ;
         const uint64_t* skipMat[128];
 
         for (int i = 0; i < 128; i++) {
-            if constexpr (N == 7) {
+            if (N == 7) {
                 skipMat[i] = skipMat8[i];
             }
-            if constexpr (N == 16) {
+            if (N == 16) {
                 skipMat[i] = skipMat17[i];
             }
         }
 
-        V[0] = 1;
+        m_State[0] = m_SumOverNew = 0;
         for (int i = 1; i < N; i++) {
-            V[i]       = 0;
-            SumOverNew = MOD_MERSENNE(SumOverNew + i);
+            m_State[i]   = 0;
+            m_SumOverNew = MOD_MERSENNE(m_SumOverNew + m_State[i]);
         }
 
+        m_SumOverNew       = 1;
         u_int32_t IDvec[4] = {streamID, runID, machineID, clusterID};
         for (auto IDindex = 0; IDindex < 4; IDindex++) {  // go from lower order to higher order ID
             auto id = IDvec[IDindex];
             auto r  = 0;
             while (id) {
                 if (id & 1) {
-                    auto& rowPtr    = skipMat[r + IDindex * 8 * sizeof(uint32_t)];
-                    uint64_t cum[N] = {0};
-
-                    for (auto j = 0; j < N; j++) {  // j is lag, enumerates terms of the poly
+                    const auto& rowPtr = skipMat[r + IDindex * 8 * sizeof(uint32_t)];
+                    uint64_t cum[M];
+                    for (int i = 0; i < M; i++) {
+                        cum[i] = 0;
+                    }
+                    for (auto j = 0; j < M; j++) {  // j is lag, enumerates terms of the poly
                         // for zero lag Y is already given
                         auto coeff = rowPtr[j];  // same coeff for all i
-                        for (auto i = 0; i < N; i++) {
-                            cum[i] = fmodmulM61(cum[i], coeff, V[i]);
+                        for (auto i = 0; i < M; i++) {
+                            cum[i] = F_MOD_MUL_M61(cum[i], coeff, i == 0 ? m_SumOverNew : m_State[i - 1]);
                         }
-                        SumOverNew = fmodmulM61(cum[N - 1], coeff, V[N - 1]);
                         updateState();
                     }
+                    m_SumOverNew = cum[0];
                     for (auto i = 0; i < N; i++) {
-                        V[i] = cum[i];
+                        m_State[i] = cum[i + 1];
                     }
                 }
                 id = (id >> 1);
                 r++;  // bring up the r-th bit in the ID
             }
         }
-        for (unsigned long i : V) {
-            SumOverNew += MOD_MERSENNE(SumOverNew + i);
-        }
-        counter = 0;
+        m_counter = 0;
     }
 
    public:
 #ifndef __CUDA_ARCH__
     friend std::ostream& operator<<(std::ostream& os, const MixMaxRng& rng) {
         os << "V: ";
-        for (const auto& elem : rng.V) {
+        for (const auto& elem : rng.m_State) {
             os << elem << " ";
         }
-        os << " counter: " << static_cast<u_int32_t>(rng.counter) << " SumOverNew: " << rng.SumOverNew;
+        os << " counter: " << static_cast<u_int32_t>(rng.m_counter) << " SumOverNew: " << rng.m_SumOverNew;
         return os;
     }
 #endif
@@ -299,6 +278,6 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
 using MixMaxRng8  = MixMaxRng<8>;
 using MixMaxRng17 = MixMaxRng<17>;
 
-}  // namespace RNG
+}  // namespace MIXMAX
 
 #endif  // MIXMAX_INCLUDE_MIXMAXRNG_H_

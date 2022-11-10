@@ -71,7 +71,7 @@ struct rng_state_t {
             PartialSumOverOld = V[0];
             auto lV = V[0] = MOD_MERSENNE(SumOverNew + PartialSumOverOld);
             SumOverNew     = MOD_MERSENNE(SumOverNew + lV);
-#pragma unroll 15
+#pragma GCC unroll 15
             for (int i(1); i != 16; ++i) {
                 const auto lRotatedPreviousPartialSumOverOld = Rotate_61bit(PartialSumOverOld, 36);
                 PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + V[i]);

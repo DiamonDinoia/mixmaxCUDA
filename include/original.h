@@ -60,4 +60,14 @@ myuint flat(rng_state_t* X) {
     }
 }
 }  // namespace original
+
+#undef N
+#undef SPECIALMUL
+#undef SPECIAL
+#undef BITS
+#undef M61
+#undef MOD_MERSENNE
+#undef MULWU
+#undef modadd
+
 #endif  // MIXMAX__ORIGINAL_H_

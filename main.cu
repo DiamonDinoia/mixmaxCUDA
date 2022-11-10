@@ -7,8 +7,8 @@
 #include <chrono>
 #include <iostream>
 
-#include "MixMaxRng.h"
 #include "clean.h"
+#include "mixmax/mixmax.h"
 #include "original.h"
 
 #define BLOCKS (82 * 16)
@@ -19,7 +19,7 @@
 #define iterations (1 << 20)
 
 using namespace clean;
-using MixMaxRng17 = RNG::MixMaxRng17;
+using MixMaxRng17 = MIXMAX::MixMaxRng17;
 
 #define CUDA_CALL(x)                                        \
     do {                                                    \
