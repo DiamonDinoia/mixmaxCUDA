@@ -96,7 +96,7 @@ __global__ void run_mixmax_opt(MixMaxRng17* rngs, double* results) {
     auto rng     = rngs[blockIdx.x * blockDim.x + threadIdx.x];
     double value = 0;
     for (long i = 0; i < iterations; ++i) {
-        value += rng.getFloat();
+        value += rng.Uniform();
     }
     results[blockIdx.x * blockDim.x + threadIdx.x] = value;
 }

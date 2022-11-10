@@ -49,7 +49,7 @@ class _Generator
 typedef uint32_t myID_t;
 typedef uint64_t myuint;
 
-constexpr int Ndim            = 17;  // turn off for TEMPLATE use
+constexpr int Ndim            = 240;  // turn off for TEMPLATE use
 
 constexpr int BITS            = 61;
 constexpr myuint M61          = 2305843009213693951ULL;
@@ -114,6 +114,8 @@ class mixmax_engine : public _Generator<std::uint64_t, 0, 0x1FFFFFFFFFFFFFFF>  /
     mixmax_engine& operator=(const mixmax_engine& other);
 
     inline std::uint64_t operator()() { return get_next(); }
+
+    void seed_spbox(myuint seed);
 
    private:
     myuint MOD_MULSPEC(myuint k);
@@ -187,7 +189,7 @@ PREF myuint mixmax_engine POST ::iterate_raw_vec(myuint* Y, myuint sumtotOld) {
     for (i = 1; i < N; i++) {
         if (SPECIALMUL != 0) {
             myuint tempPO = MULWU(tempP);
-            tempP         = modadd(tempP, Y[i]);
+            tempP         = MOD_MERSENNE(tempP + Y[i]);
             tempV         = MOD_MERSENNE(tempV + tempP + tempPO);  // new Y[i] = old Y[i] + old partial * m
         } else {
             tempP = modadd(tempP, Y[i]);
@@ -349,59 +351,28 @@ PREF myuint mixmax_engine POST ::apply_bigskip(myuint* Vout, myuint* Vin, myID_t
                     cum[i] = 0;
                 }
                 for (j = 0; j < N; j++) {  // j is lag, enumerates terms of the poly
-//                    std::cout << "iteration j : " << j << std::endl;
                     // for zero lag Y is already given
                     coeff = rowPtr[j];  // same coeff for all i
                     for (i = 0; i < N; i++) {
                         cum[i] = fmodmulM61(cum[i], coeff, Y[i]);
-//                        std::cout << "cum[" << i << "] " << cum[i] << " ";
                     }
-//                    std::cout << std::endl;
-//                    std::cout << "sumtot " << sumtot << std::endl;
-                    for (i = 0; i < N; i++) {
-//                        std::cout << " Y[" << i << "] " << Y[i];
-                    }
-//                    std::cout << std::endl;
                     sumtot = iterate_raw_vec(Y, sumtot);
-//                    std::cout << "sumtot " << sumtot << std::endl;
-                    for (i = 0; i < N; i++) {
-//                        std::cout << " Y[" << i << "] " << Y[i];
-                    }
-//                    std::cout << std::endl;
-//                    if (j==1) return 0;
                 }
                 sumtot = 0;
                 for (i = 0; i < N; i++) {
                     Y[i]   = cum[i];
                     sumtot = modadd(sumtot, cum[i]);
-//                    std::cout << "cum[" << i << "] " << cum[i] << " ";
                 };
-//                std::cout << std::endl;
-//                std::cout << "sumtot " << sumtot << std::endl;
-//                for (i = 0; i < N; i++) {
-//                    std::cout << " Y[" << i << "] " << Y[i];
-//                }
-//                std::cout << std::endl;
-//                return 0;
             }
             id = (id >> 1);
             r++;  // bring up the r-th bit in the ID
         }
     }
-//    std::cout << "sumtot " << sumtot << std::endl;
-//    for (i = 0; i < N; i++) {
-//        std::cout << " Y[" << i << "] " << Y[i];
-//    }
-//    std::cout << std::endl;
     sumtot = 0;
     for (i = 0; i < N; i++) {
         Vout[i] = Y[i];
         sumtot  = modadd(sumtot, Y[i]);
     };  // returns sumtot, and copy the vector over to Vout
-//    std::cout << "sumtot " << sumtot << std::endl;
-//    for (i = 0; i < N; i++) {
-//        std::cout << " Y[" << i << "] " << Vout[i];
-//    }
     return (sumtot);
 }
 
@@ -490,6 +461,26 @@ PREF void mixmax_engine POST ::BranchInplace() {
     S.sumtot  = modadd(S.sumtot, S.V[1] - tmp + MERSBASE);
     S.sumtot  = iterate_raw_vec(S.V.data(), S.sumtot);  // printf("iterating!\n");
     S.counter = 1;
+}
+
+PREF void mixmax_engine POST :: seed_spbox(myuint seed)
+{ // a 64-bit LCG from Knuth line 26, in combination with a bit swap is used to seed
+    const myuint MULT64=6364136223846793005ULL;
+    int i;
+    myuint sumtot=0,ovflow=0;
+    if (seed == 0){
+        fprintf(stderr, " try seeding with nonzero seed next time!\n");
+        exit(SEED_WAS_ZERO);
+    }
+    myuint l = seed;
+    //X->V[0] = l & MERSBASE;
+    for (i=0; i < N; i++){
+        l*=MULT64; l = (l << 32) ^ (l>>32);
+        S.V[i] = l & MERSBASE;
+        sumtot += S.V[(i)]; if (sumtot < S.V[(i)]) {ovflow++;}
+    }
+    S.counter = N;  // set the counter to N if iteration should happen right away
+    S.sumtot = MOD_MERSENNE(MOD_MERSENNE(sumtot) + (ovflow <<3 ));
 }
 
 // template class mixmax_engine<240>;// TEMPLATE

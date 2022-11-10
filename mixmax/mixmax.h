@@ -10,8 +10,6 @@
 
 namespace MIXMAX {
 
-namespace {
-
 #ifdef __CUDACC__
 
 #define MIXMAX_HOST_AND_DEVICE __host__ __device__
@@ -30,81 +28,62 @@ namespace {
 
 #endif
 
-};  // namespace
+namespace internal {
 
 template <uint8_t M>
 class MIXMAX_CLASS_ALIGN MixMaxRng {
    public:
     MIXMAX_HOST_AND_DEVICE
     MixMaxRng() {
-        for (auto& element : m_State) {
-            element = 1;
-        }
-        m_SumOverNew = 1;
-        updateState();
-        m_counter = 1;
-    }
-    MIXMAX_HOST_AND_DEVICE
-    MixMaxRng(uint64_t seed) {
-#ifndef __CUDA_ARCH__
-        // a 64-bit LCG from Knuth line 26, in combination with a bit swap is used to seed
-        const uint64_t MULT64 = 6364136223846793005ULL;
-        uint64_t sum_total = 0, overflow = 0;
-        uint64_t l = seed;
-        for (unsigned long& i : m_State) {
-            l *= MULT64;
-            l = (l << 32) ^ (l >> 32);
-            i = l & M61;
-            sum_total += i;
-            if (sum_total < i) {
-                overflow++;
-            }
-        }
-        m_counter    = N;  // set the counter to N if iteration should happen right away
-        m_SumOverNew = MOD_MERSENNE(MOD_MERSENNE(sum_total) + (overflow << 3));
-#else
-        union unpack {
-            struct {
-                uint32_t low;   // lower 32 bits
-                uint32_t high;  // upper 32 bits
-            } split;
-            uint64_t element;
-        };
-        unpack seeds{};
-        seeds.element         = seed;
-
-        const uint64_t stream = blockIdx.x * blockDim.x + threadIdx.x;
-        unpack streams{};
-        streams.element = stream;
-        appplyBigSkip(seeds.split.high, seeds.split.low, streams.split.high, streams.split.low);
-#endif
-    }
-
-    MIXMAX_HOST_AND_DEVICE
-    MixMaxRng(uint32_t clusterID, uint32_t machineID, uint32_t runID, uint32_t streamID) {
-        appplyBigSkip(clusterID, machineID, runID, streamID);
-    }
-
-    MIXMAX_HOST_AND_DEVICE
-    MixMaxRng(uint64_t seed, uint64_t stream) {
-        union unpack {
-            struct {
-                uint32_t low;   // lower 32 bits
-                uint32_t high;  // upper 32 bits
-            } split;
-            uint64_t element;
-        };
-        unpack seeds{};
-        seeds.element = seed;
-        unpack streams{};
-        streams.element = stream;
-        appplyBigSkip(seeds.split.high, seeds.split.low, streams.split.high, streams.split.low);
+        validateTemplate();
+        seedZero();
     }
 
     /**
-     * Using CPP 17 features to return int or float depending on the need
-     * @tparam T
-     * @return
+     * Basic seeding function.
+     * On GPU seeding is expensive so it is recommended to do so in another kenrel
+     * @param seed
+     */
+    MIXMAX_HOST_AND_DEVICE
+    MixMaxRng(uint64_t seed) {
+        validateTemplate();
+        if (seed == 0) {
+            seedZero();
+            return;
+        }
+#ifndef __CUDA_ARCH__
+        // On CPU seed using a 64-bit LCG from Knuth line 26, in combination with a bit swap
+        seedLCG(seed);
+#else
+        // ON GPU Using GPU Thread id to seed different streams
+        const uint64_t stream = blockIdx.x * blockDim.x + threadIdx.x;
+        unpackAndBigSkip(seed, stream);
+#endif
+    }
+
+    /**
+     * Seeding with 256 bits.
+     * This guarantees that there is no collision between different streams if at least one of the 256 bits is different
+     */
+    MIXMAX_HOST_AND_DEVICE
+    MixMaxRng(uint32_t clusterID, uint32_t machineID, uint32_t runID, uint32_t streamID) {
+        validateTemplate();
+        appplyBigSkip(clusterID, machineID, runID, streamID);
+    }
+
+    /**
+     * Seeding with 256 bits.
+     * This guarantees that there is no collision between different streams if at least one of the 256 bits is different
+     * Useful in a parallel application where stream can be the CPU/GPU thread id
+     */
+    MIXMAX_HOST_AND_DEVICE
+    MixMaxRng(uint64_t seed, uint64_t stream) {
+        validateTemplate();
+        unpackAndBigSkip(seed, stream);
+    }
+
+    /**
+     * Generates an uniform 64bits integer
      */
     MIXMAX_HOST_AND_DEVICE
     inline constexpr uint64_t operator()() noexcept {
@@ -114,8 +93,12 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
         return m_State[m_counter++];
     }
 
+    /**
+     * Generates an uniform double between 0,1
+     * It is faster than using a std::uniform_distribution()
+     */
     MIXMAX_HOST_AND_DEVICE
-    inline constexpr double getFloat() noexcept {
+    inline constexpr double Uniform() noexcept {
         const auto u = operator()();
         return static_cast<double>(u) * INV_MERSBASE;
     }
@@ -123,10 +106,11 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
    private:
     // Constants
     static constexpr double INV_MERSBASE = 0.43368086899420177360298E-18;
-    // The state is M-1 because the last element is stored in the variable SumOverNew outside the vector
-    static constexpr uint8_t N    = M - 1;
-    static constexpr uint8_t BITS = 61U;
-    static constexpr uint64_t M61 = 0x1FFFFFFFFFFFFFFF;
+    // The state is M-1 because the last element is stored in the variable m_SumOverNew outside the vector
+    static constexpr uint8_t N        = M - 1;
+    static constexpr uint8_t BITS     = 61U;
+    static constexpr uint64_t M61     = 0x1FFFFFFFFFFFFFFF;
+    static constexpr uint64_t SPECIAL = (M == 240) ? 487013230256099140 : 0;
     // RNG state
     alignas(16) uint64_t m_State[N];
     uint64_t m_SumOverNew;
@@ -134,45 +118,64 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
     //
 
     MIXMAX_HOST_AND_DEVICE
-    static inline constexpr uint64_t ROTATE_61(const uint64_t aVal, const std::size_t aSize) {
-        return ((aVal << aSize) & M61) | (aVal >> (61 - aSize));
+    static inline constexpr uint64_t SHIFT_ROTATION() {
+        if constexpr (M == 8) {
+            return 53;
+        }
+        if constexpr (M == 17) {
+            return 36;
+        }
+        if constexpr (M == 240) {
+            return 51;
+        }
+    }
+
+    MIXMAX_HOST_AND_DEVICE
+    static inline constexpr uint64_t ROTATE_61(const uint64_t aVal) {
+        return ((aVal << SHIFT_ROTATION()) & M61) | (aVal >> (61 - SHIFT_ROTATION()));
     }
     MIXMAX_HOST_AND_DEVICE
     static inline constexpr uint64_t MOD_MERSENNE(uint64_t aVal) { return (aVal & M61) + (aVal >> 61); }
 
     MIXMAX_HOST_AND_DEVICE
     inline constexpr void updateState() {
-        static_assert(N == 16 || N == 7);
-        uint64_t PartialSumOverOld = m_State[0];
+        uint64_t PartialSumOverOld    = m_State[0];
+        uint64_t oldPartialSumOverOld = PartialSumOverOld;
         auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
 #ifdef __CUDA_ARCH__
+// Helping NVCC unrolling the loop
 #pragma unroll N - 1
 #endif
         for (int i = 1; i < N; ++i) {
-            const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld, 36);
+            const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
             PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
             lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
             m_SumOverNew    = MOD_MERSENNE(m_SumOverNew + lV);
+        }
+        if constexpr (M == 240) {
+            oldPartialSumOverOld = F_MOD_MUL_M61(0, SPECIAL, oldPartialSumOverOld);
+            m_State[1]           = MOD_MERSENNE(oldPartialSumOverOld + m_State[1]);
+            m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + oldPartialSumOverOld);
         }
         m_counter = 0;
     }
 
 #if defined(__x86_64__)
     MIXMAX_HOST_AND_DEVICE
-    inline static constexpr uint64_t MOD_128(const __uint128_t s) {
+    static inline constexpr uint64_t MOD_128(const __uint128_t s) {
         uint64_t s1 = (static_cast<uint64_t>(s) & M61) + (static_cast<uint64_t>(s >> 64) * 8) +
                       (static_cast<uint64_t>(s) >> BITS);
         return MOD_MERSENNE(s1);
     }
     MIXMAX_HOST_AND_DEVICE
-    inline static constexpr uint64_t F_MOD_MUL_M61(const uint64_t cum, const uint64_t a, const uint64_t b) {
+    static inline constexpr uint64_t F_MOD_MUL_M61(const uint64_t cum, const uint64_t a, const uint64_t b) {
         const auto temp = static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b) + cum;
         return MOD_128(temp);
     }
 #else
     MIXMAX_HOST_AND_DEVICE
-    inline static constexpr uint64_t F_MOD_MUL_M61(const uint64_t cum, const uint64_t s, const uint64_t a) {
+    static constexpr uint64_t F_MOD_MUL_M61(const uint64_t cum, const uint64_t s, const uint64_t a) {
         static const uint64_t MASK32 = 0xFFFFFFFFULL;
         //
         auto o = (s)*a;
@@ -205,60 +208,107 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
          * nd machines will have non-colliding source of random numbers. did I repeat it enough times? the
          * on-collision guarantee is absolute, not probabilistic
          */
-        constexpr uint64_t skipMat17[128][17] =
+        static constexpr uint64_t skipMat240[128][240] =
+#include "mixmax_skip_N240.c"
+            ;
+        static constexpr uint64_t skipMatrix17[128][17] =
 #include "mixmax_skip_N17.c"
             ;
-        constexpr uint64_t skipMat8[128][8] =
+        static constexpr uint64_t skipMatrix8[128][8] =
 #include "mixmax_skip_N8.c"
             ;
         const uint64_t* skipMat[128];
 
         for (int i = 0; i < 128; i++) {
-            if (N == 7) {
-                skipMat[i] = skipMat8[i];
+            if constexpr (M == 8) {
+                skipMat[i] = skipMatrix8[i];
             }
-            if (N == 16) {
-                skipMat[i] = skipMat17[i];
+            if constexpr (M == 17) {
+                skipMat[i] = skipMatrix17[i];
+            }
+            if constexpr (M == 240) {
+                skipMat[i] = skipMat240[i];
             }
         }
 
-        m_State[0] = m_SumOverNew = 0;
-        for (int i = 1; i < N; i++) {
-            m_State[i]   = 0;
-            m_SumOverNew = MOD_MERSENNE(m_SumOverNew + m_State[i]);
+        m_SumOverNew = 1;
+        for (int i = 0; i < N; i++) {
+            m_State[i] = 0;
         }
-
-        m_SumOverNew       = 1;
-        u_int32_t IDvec[4] = {streamID, runID, machineID, clusterID};
-        for (auto IDindex = 0; IDindex < 4; IDindex++) {  // go from lower order to higher order ID
-            auto id = IDvec[IDindex];
-            auto r  = 0;
-            while (id) {
-                if (id & 1) {
-                    const auto& rowPtr = skipMat[r + IDindex * 8 * sizeof(uint32_t)];
-                    uint64_t cum[M];
-                    for (int i = 0; i < M; i++) {
-                        cum[i] = 0;
-                    }
-                    for (auto j = 0; j < M; j++) {  // j is lag, enumerates terms of the poly
-                        // for zero lag Y is already given
-                        auto coeff = rowPtr[j];  // same coeff for all i
-                        for (auto i = 0; i < M; i++) {
-                            cum[i] = F_MOD_MUL_M61(cum[i], coeff, i == 0 ? m_SumOverNew : m_State[i - 1]);
-                        }
-                        updateState();
-                    }
-                    m_SumOverNew = cum[0];
-                    for (auto i = 0; i < N; i++) {
-                        m_State[i] = cum[i + 1];
-                    }
+        u_int32_t idVector[4] = {streamID, runID, machineID, clusterID};
+        uint64_t cumulativeVector[M];
+        for (auto idIndex = 0; idIndex < 4; idIndex++) {  // go from lower order to higher order ID
+            auto currentID = idVector[idIndex];
+            auto skipIndex = 0;
+            for (; currentID > 0; currentID >>= 1, skipIndex++) {  // bring up the r-th bit in the ID
+                if (!(currentID & 1)) {
+                    continue;
                 }
-                id = (id >> 1);
-                r++;  // bring up the r-th bit in the ID
+                const auto& skipVector = skipMat[skipIndex + idIndex * 8 * sizeof(uint32_t)];
+                for (int i = 0; i < M; i++) {
+                    cumulativeVector[i] = 0;
+                }
+                for (auto j = 0; j < M; j++) {  // j is lag, enumerates terms of the poly
+                    // for zero lag Y is already given
+                    auto skipElement = skipVector[j];  // same skipElement for all i
+                    for (auto i = 0; i < M; i++) {
+                        cumulativeVector[i] =
+                            F_MOD_MUL_M61(cumulativeVector[i], skipElement, i == 0 ? m_SumOverNew : m_State[i - 1]);
+                    }
+                    updateState();
+                }
+                m_SumOverNew = cumulativeVector[0];
+                for (auto i = 0; i < N; i++) {
+                    m_State[i] = cumulativeVector[i + 1];
+                }
             }
         }
         m_counter = 0;
     }
+
+    /**
+     * Sets the generator to the unary vector
+     */
+    void seedZero() {
+        for (auto& element : m_State) {
+            element = 1;
+        }
+        m_SumOverNew = 1;
+        updateState();
+        m_counter = 1;
+    }
+
+    /**
+     * a 64-bit LCG from Knuth line 26, in combination with a bit swap is used to seed
+     */
+    void seedLCG(uint64_t seed) {
+        static constexpr uint64_t MULT64 = 6364136223846793005ULL;
+        uint64_t overflow                = 0;
+        seed *= MULT64;
+        seed         = (seed << 32) ^ (seed >> 32);
+        m_SumOverNew = seed & M61;
+        for (auto& currentState : m_State) {
+            seed *= MULT64;
+            seed         = (seed << 32) ^ (seed >> 32);
+            currentState = seed & M61;
+            m_SumOverNew += currentState;
+            overflow += m_SumOverNew < currentState;
+        }
+        m_SumOverNew = MOD_MERSENNE(MOD_MERSENNE(m_SumOverNew) + (overflow << 3));
+        m_counter    = N;
+    }
+
+    void unpackAndBigSkip(uint64_t seed, uint64_t stream) {
+        const uint32_t seed_low    = seed & 0xFFFFFFFF;
+        const uint32_t seed_high   = (seed & (0xFFFFFFFFUL << 32)) >> 32;
+        const uint32_t stream_low  = stream & 0xFFFFFFFF;
+        const uint32_t stream_high = (stream & (0xFFFFFFFFUL << 32)) >> 32;
+        appplyBigSkip(stream_high, stream_low, seed_high, seed_low);
+    }
+    /**
+     * Do not compile if state size is not valid
+     */
+    void validateTemplate() { static_assert(M == 240 || M == 17 || M == 8); }
 
    public:
 #ifndef __CUDA_ARCH__
@@ -271,13 +321,23 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
         return os;
     }
 #endif
+    // For compatibility with std::random
     static constexpr uint64_t min() { return 0; }
     static constexpr uint64_t max() { return 0x1FFFFFFFFFFFFFFF; }
 };
+}  // namespace internal
 
-using MixMaxRng8  = MixMaxRng<8>;
-using MixMaxRng17 = MixMaxRng<17>;
+using MixMaxRng8   = internal::MixMaxRng<8>;
+using MixMaxRng17  = internal::MixMaxRng<17>;
+using MixMaxRng240 = internal::MixMaxRng<240>;
 
 }  // namespace MIXMAX
+
+// Always clean-up defines
+#undef MIXMAX_HOST_AND_DEVICE
+#undef MIXMAX_HOST
+#undef MIXMAX_DEVICE
+#undef MIXMAX_KERNEL
+#undef MIXMAX_CLASS_ALIGN
 
 #endif  // MIXMAX_INCLUDE_MIXMAXRNG_H_
