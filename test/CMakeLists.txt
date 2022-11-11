@@ -1,7 +1,3 @@
-
-cmake_minimum_required(VERSION 3.19)
-project(mixmax VERSION 0.1.0 LANGUAGES CXX C)
-
 include(CheckLanguage)
 
 option(GPU "Enable GPU" OFF)
@@ -81,7 +77,7 @@ if (GPU)
         SET(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
         set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
     endif ()
-    list(APPEND GPU_FLAGS --expt-relaxed-constexpr --extended-lambda --ptxas-options=-v -maxrregcount=64)
+    list(APPEND GPU_FLAGS --expt-relaxed-constexpr --ptxas-options=-v)
     add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:${GPU_FLAGS}>")
     find_package(CUDAToolkit REQUIRED)
     message("CUDA INCLUDE ${CUDA_INCLUDE_DIRS}")
