@@ -12,47 +12,20 @@
 #include <random>
 #include <thread>
 
-#include "clean.h"
-#include "original.h"
-
 constexpr auto ITERATIONS = 1ULL << 31;
 constexpr auto RUNS       = 5;
 
+const auto seed1          = std::random_device()();
+const auto seed2          = std::random_device()();
+const auto seed3          = std::random_device()();
+const auto seed4          = std::random_device()();
+
 double test_original() {
-    original::rng_state_t original{{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, 1, 2};
-    original.sumtot = original::iterate_raw_vec(original.V, original.sumtot);
+    mixmax_engine gen{seed1, seed2, seed3, seed4};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
     for (auto i = 0ULL; i < ITERATIONS; ++i) {
-        result = original::flat(&original);
-    }
-    auto end = std::chrono::steady_clock::now();
-    //
-    std::chrono::duration<double, std::milli> timeRequired = (end - start);
-    std::cout << "result " << result << std::endl;
-    return timeRequired.count();
-}
-
-double test_clean() {
-    clean::rng_state_t clean{};
-    uint64_t result;
-    auto start = std::chrono::steady_clock::now();
-    for (auto i = 0ULL; i < ITERATIONS + 1; ++i) {
-        result = clean.get();
-    }
-    auto end = std::chrono::steady_clock::now();
-    //
-    std::chrono::duration<double, std::milli> timeRequired = (end - start);
-    std::cout << "result " << result << std::endl;
-    return timeRequired.count();
-}
-
-double test_clean_2() {
-    clean::rng_state_t clean{};
-    uint64_t result;
-    auto start = std::chrono::steady_clock::now();
-    for (auto i = 0ULL; i < ITERATIONS + 1; ++i) {
-        result = clean.get2();
+        result = gen();
     }
     auto end = std::chrono::steady_clock::now();
     //
@@ -62,7 +35,7 @@ double test_clean_2() {
 }
 
 double test_opt() {
-    MIXMAX::MixMaxRng17 rng{};
+    MIXMAX::MixMaxRng240 rng{seed1, seed2, seed3, seed4};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
     for (auto i = 0ULL; i < ITERATIONS; ++i) {
@@ -76,10 +49,6 @@ double test_opt() {
 }
 
 void test_seeding() {
-    const auto seed1 = std::random_device()();
-    const auto seed2 = std::random_device()();
-    const auto seed3 = std::random_device()();
-    const auto seed4 = std::random_device()();
     MIXMAX::MixMaxRng240 rng{seed1, seed2, seed3, seed4};
     mixmax_engine gen{seed1, seed2, seed3,
                       seed4};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
@@ -123,8 +92,6 @@ void benchmack(std::function<double()> func, const std::string& message) {
 int main(int argc, char** argv) {
     test_seeding();
     benchmack(test_original, "ORIGINAL");
-    benchmack(test_clean, "CLEAN");
-    benchmack(test_clean_2, "CLEAN 2");
     benchmack(test_opt, "OPTIMIZED");
     return 0;
 }

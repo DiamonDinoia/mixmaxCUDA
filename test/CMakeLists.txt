@@ -127,7 +127,6 @@ file(COPY ${MixMaxOriginal_SOURCE_DIR}/mixmax_skip_N17.c
         DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/mixmax_include)
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/mixmax_include)
-include_directories(include)
 
 add_executable(main main.cpp)
 target_link_libraries(main mixmax)
