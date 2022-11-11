@@ -1,74 +1,80 @@
 //
 // Created by mbarbone on 11/3/22.
 //
+#include <mixmax/mixmax.h>
+
 #include <chrono>
 #include <iostream>
+#include <mixmax.hpp>
+#undef MULWU
+#undef MOD_MERSENNE
+#include <functional>
 #include <random>
 #include <thread>
 
-#include "mixmax/mixmax.h"
-#include "original.h"
 #include "clean.h"
-#include "mixmax.hpp"
+#include "original.h"
 
-constexpr auto iterations = 1ULL << 31;
+constexpr auto ITERATIONS = 1ULL << 31;
+constexpr auto RUNS       = 5;
 
-void test_original() {
+double test_original() {
     original::rng_state_t original{{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, 1, 2};
     original.sumtot = original::iterate_raw_vec(original.V, original.sumtot);
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
-    for (auto i = 0ULL; i < iterations; ++i) {
+    for (auto i = 0ULL; i < ITERATIONS; ++i) {
         result = original::flat(&original);
     }
     auto end = std::chrono::steady_clock::now();
     //
     std::chrono::duration<double, std::milli> timeRequired = (end - start);
     std::cout << "result " << result << std::endl;
-    std::cout << "Original required " << timeRequired.count() << " milliseconds" << std::endl;
+    return timeRequired.count();
 }
 
-void test_clean() {
+double test_clean() {
     clean::rng_state_t clean{};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
-    for (auto i = 0ULL; i < iterations + 1; ++i) {
+    for (auto i = 0ULL; i < ITERATIONS + 1; ++i) {
         result = clean.get();
     }
     auto end = std::chrono::steady_clock::now();
     //
     std::chrono::duration<double, std::milli> timeRequired = (end - start);
     std::cout << "result " << result << std::endl;
-    std::cout << "Clean required " << timeRequired.count() << " milliseconds" << std::endl;
+    return timeRequired.count();
 }
 
-void test_clean_2() {
+double test_clean_2() {
     clean::rng_state_t clean{};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
-    for (auto i = 0ULL; i < iterations + 1; ++i) {
+    for (auto i = 0ULL; i < ITERATIONS + 1; ++i) {
         result = clean.get2();
     }
     auto end = std::chrono::steady_clock::now();
     //
     std::chrono::duration<double, std::milli> timeRequired = (end - start);
     std::cout << "result " << result << std::endl;
-    std::cout << "Clean2 required " << timeRequired.count() << " milliseconds" << std::endl;
+    return timeRequired.count();
 }
 
-void test_opt() {
+double test_opt() {
     MIXMAX::MixMaxRng17 rng{};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
-    for (auto i = 0ULL; i < iterations; ++i) {
+    for (auto i = 0ULL; i < ITERATIONS; ++i) {
         result = rng();
     }
     auto end = std::chrono::steady_clock::now();
     //
     std::chrono::duration<double, std::milli> timeRequired = (end - start);
     std::cout << "result " << result << std::endl;
-    std::cout << "OPTIMIZED required " << timeRequired.count() << " milliseconds" << std::endl;
+    return timeRequired.count();
 }
+
 void test_seeding() {
     const auto seed1 = std::random_device()();
     const auto seed2 = std::random_device()();
@@ -77,7 +83,7 @@ void test_seeding() {
     MIXMAX::MixMaxRng240 rng{seed1, seed2, seed3, seed4};
     mixmax_engine gen{seed1, seed2, seed3,
                       seed4};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
-    for (auto i = 0ULL; i < iterations; ++i) {
+    for (auto i = 0ULL; i < ITERATIONS; ++i) {
         if (rng() != gen()) {
             throw std::runtime_error("RNG WRONG RESULT");
         }
@@ -86,30 +92,39 @@ void test_seeding() {
     std::cout << "OPT " << gen() << std::endl;
 }
 
-void test_branching() {
-    const auto seed = std::random_device()();
-    mixmax_engine gen{};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
-    gen.seed_spbox(seed);
-    MIXMAX::MixMaxRng240 rng{seed};
-    for (auto i = 0ULL; i < iterations; ++i) {
-        if (rng() != gen()) {
-            throw std::runtime_error("RNG WRONG RESULT");
-        }
+template <typename T>
+T variance(const std::vector<T>& vec) {
+    const size_t sz = vec.size();
+    if (sz == 1) {
+        return 0.0;
     }
+    // Calculate the mean
+    const T mean = std::accumulate(vec.begin(), vec.end(), 0.0) / sz;
+    // Now calculate the variance
+    auto variance_func = [&mean, &sz](T accumulator, const T& val) {
+        return accumulator + ((val - mean) * (val - mean) / (sz - 1));
+    };
+    return std::accumulate(vec.begin(), vec.end(), 0.0, variance_func);
 }
 
-int main(int argc, char **argv) {
-    std::thread t1{test_branching};
-    std::thread t2{test_seeding};
-    std::thread t3{test_original};
-    std::thread t4{test_clean};
-    std::thread t5{test_clean_2};
-    std::thread t6{test_opt};
-    t1.join();
-    t2.join();
-    t3.join();
-    t4.join();
-    t5.join();
-    t6.join();
+void benchmack(std::function<double()> func, const std::string& message) {
+    double time = 0.;
+    std::vector<double> times;
+    times.reserve(RUNS);
+    for (auto i = 0ULL; i < RUNS; ++i) {
+        const auto current_time = func();
+        times.emplace_back(current_time);
+        time += current_time;
+    }
+    std::cout << message << " required " << time / RUNS << " milliseconds" << std::endl;
+    std::cout << message << " stdev " << variance(times) << " milliseconds" << std::endl;
+}
+
+int main(int argc, char** argv) {
+    test_seeding();
+    benchmack(test_original, "ORIGINAL");
+    benchmack(test_clean, "CLEAN");
+    benchmack(test_clean_2, "CLEAN 2");
+    benchmack(test_opt, "OPTIMIZED");
     return 0;
 }

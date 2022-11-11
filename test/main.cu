@@ -3,17 +3,17 @@
 //
 #include <curand_kernel.h>
 #include <curand_mtgp32_host.h>
+#include <mixmax/mixmax.h>
 
 #include <chrono>
 #include <iostream>
 
 #include "clean.h"
-#include "mixmax/mixmax.h"
 #include "original.h"
 
-//#define BLOCKS (82 * 16)
+// #define BLOCKS (82 * 16)
 #define BLOCKS 128
-//#define THREADS 128
+// #define THREADS 128
 #define THREADS 256
 #define SIZE (BLOCKS * THREADS)
 #define TESTS (1 << 20)
@@ -197,8 +197,8 @@ void printDevProp(cudaDeviceProp devProp) {
     printf("Max Threads Per Multi Processor:     %d\n", devProp.maxThreadsPerMultiProcessor);
     printf("Max Blocks Per Multi Processor:     %d\n", devProp.maxBlocksPerMultiProcessor);
     printf("Kernel execution timeout:      %s\n", (devProp.kernelExecTimeoutEnabled ? "Yes" : "No"));
-    return;
 }
+
 int main(const int argc, const char** argv) {
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0);
@@ -216,8 +216,9 @@ int main(const int argc, const char** argv) {
     CUDA_CALL(cudaMalloc(&devKernelParams, sizeof(mtgp32_kernel_params)));
     CUDA_CALL(cudaMalloc(&results, sizeof(results) * SIZE));
 
-//    CURAND_CALL(curandMakeMTGP32Constants(mtgp32dc_params_fast_11213, devKernelParams));
-//    CURAND_CALL(curandMakeMTGP32KernelState(devMTGPStates, mtgp32dc_params_fast_11213, devKernelParams, BLOCKS, 42));
+    //    CURAND_CALL(curandMakeMTGP32Constants(mtgp32dc_params_fast_11213, devKernelParams));
+    //    CURAND_CALL(curandMakeMTGP32KernelState(devMTGPStates, mtgp32dc_params_fast_11213, devKernelParams, BLOCKS,
+    //    42));
 
     initialize_rngs<<<BLOCKS, THREADS>>>(42, curand_rngs, mixmax_rngs, mixmax_opts);
     CUDA_CALL(cudaDeviceSynchronize());
@@ -226,7 +227,7 @@ int main(const int argc, const char** argv) {
         test_clean(curand_rngs, mixmax_rngs, results);
         test_clean_2(curand_rngs, mixmax_rngs, results);
         test_opt(mixmax_opts, results);
-//        test_mtgp32(devMTGPStates, results);
+        //        test_mtgp32(devMTGPStates, results);
     }
     cudaFree(curand_rngs);
     cudaFree(mixmax_rngs);

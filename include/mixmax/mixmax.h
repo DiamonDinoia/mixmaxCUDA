@@ -10,6 +10,12 @@
 
 namespace MIXMAX {
 
+#if __cplusplus >= 201402L
+#define MIXMAX_CONSTEXPR constexpr
+#else
+#define MIXMAX_CONSTEXPR
+#endif
+
 #define MIXMAX_STRINGIFY_(...) #__VA_ARGS__
 #define MIXMAX_STRINGIFY(...) MIXMAX_STRINGIFY_(__VA_ARGS__)
 #if defined(__CUDA_ARCH__) || defined(__clang__)
@@ -53,7 +59,7 @@ namespace internal {
  *      17      |    294    |    374.3 |
  *     240      |   4389    |   8679.2 |
  */
-template <uint8_t M>
+template <std::uint8_t M>
 class MIXMAX_CLASS_ALIGN MixMaxRng {
    public:
     MIXMAX_HOST_AND_DEVICE
@@ -68,7 +74,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
      * @param seed
      */
     MIXMAX_HOST_AND_DEVICE
-    MixMaxRng(uint64_t seed) {
+    MixMaxRng(std::uint64_t seed) {
         validateTemplate();
         if (seed == 0) {
             seedZero();
@@ -79,7 +85,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
         seedLCG(seed);
 #else
         // ON GPU Using GPU Thread id to seed different streams
-        const uint64_t stream = blockIdx.x * blockDim.x + threadIdx.x;
+        const std::uint64_t stream = blockIdx.x * blockDim.x + threadIdx.x;
         unpackAndBigSkip(seed, stream);
 #endif
     }
@@ -89,7 +95,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
      * This guarantees that there is no collision between different streams if at least one of the 256 bits is different
      */
     MIXMAX_HOST_AND_DEVICE
-    MixMaxRng(uint32_t clusterID, uint32_t machineID, uint32_t runID, uint32_t streamID) {
+    MixMaxRng(std::uint32_t clusterID, std::uint32_t machineID, std::uint32_t runID, std::uint32_t streamID) {
         validateTemplate();
         appplyBigSkip(clusterID, machineID, runID, streamID);
     }
@@ -100,7 +106,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
      * Useful in a parallel application where stream can be the CPU/GPU thread id
      */
     MIXMAX_HOST_AND_DEVICE
-    MixMaxRng(uint64_t seed, uint64_t stream) {
+    MixMaxRng(std::uint64_t seed, std::uint64_t stream) {
         validateTemplate();
         unpackAndBigSkip(seed, stream);
     }
@@ -109,7 +115,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
      * Generates an uniform 64bits integer
      */
     MIXMAX_HOST_AND_DEVICE
-    inline constexpr uint64_t operator()() noexcept {
+    inline MIXMAX_CONSTEXPR std::uint64_t operator()() noexcept {
         if (m_counter == N) {
             updateState();
         }
@@ -121,27 +127,26 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
      * It is faster than using a std::uniform_distribution()
      */
     MIXMAX_HOST_AND_DEVICE
-    inline constexpr double Uniform() noexcept {
+    inline MIXMAX_CONSTEXPR double Uniform() noexcept {
         const auto u = operator()();
         return static_cast<double>(u) * INV_MERSBASE;
     }
 
     // For compatibility with std::random
-    static constexpr uint64_t min() { return 0; }
-    static constexpr uint64_t max() { return 0x1FFFFFFFFFFFFFFF; }
+    static constexpr std::uint64_t min() { return 0; }
+    static constexpr std::uint64_t max() { return 0x1FFFFFFFFFFFFFFF; }
 
    private:
     // Constants
     static constexpr double INV_MERSBASE = 0.43368086899420177360298E-18;
     // The state is M-1 because the last element is stored in the variable m_SumOverNew outside the vector
-    static constexpr uint8_t N        = M - 1;
-    static constexpr uint8_t BITS     = 61U;
-    static constexpr uint64_t M61     = 0x1FFFFFFFFFFFFFFF;
-    static constexpr uint64_t SPECIAL = (M == 240) ? 487013230256099140 : 0;
+    static constexpr std::uint8_t N    = M - 1;
+    static constexpr std::uint8_t BITS = 61U;
+    static constexpr std::uint64_t M61 = 0x1FFFFFFFFFFFFFFF;
     // RNG state
-    alignas(16) uint64_t m_State[N];
-    uint64_t m_SumOverNew;
-    uint32_t m_counter;
+    alignas(16) std::uint64_t m_State[N];
+    std::uint64_t m_SumOverNew;
+    std::uint32_t m_counter;
     //
     /**
      * Table of parameters for MIXMAX
@@ -154,65 +159,69 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
      *     240      | 487013230256099140 |         51         |   fmodmulM61( 0, SPECIAL , (k) )
      */
     //
-    MIXMAX_HOST_AND_DEVICE
-    static inline constexpr uint64_t SHIFT_ROTATION() {
-        if constexpr (M == 8) {
-            return 53;
-        }
-        if constexpr (M == 17) {
-            return 36;
-        }
-        if constexpr (M == 240) {
-            return 51;
-        }
+
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 240>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint64_t SHIFT_ROTATION() noexcept {
+        return 51;
+    }
+
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 17>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint64_t SHIFT_ROTATION() noexcept {
+        return 36;
+    }
+
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 8>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint64_t SHIFT_ROTATION() noexcept {
+        return 53;
     }
 
     MIXMAX_HOST_AND_DEVICE
-    static inline constexpr uint64_t ROTATE_61(const uint64_t aVal) {
-        constexpr auto SHIFT = SHIFT_ROTATION();
-        return ((aVal << SHIFT) & M61) | (aVal >> (61 - SHIFT));
+    static inline constexpr std::uint64_t ROTATE_61(const std::uint64_t aVal) noexcept {
+        return ((aVal << SHIFT_ROTATION()) & M61) | (aVal >> (61 - SHIFT_ROTATION()));
     }
-    MIXMAX_HOST_AND_DEVICE
-    static inline constexpr uint64_t MOD_MERSENNE(uint64_t aVal) { return (aVal & M61) + (aVal >> 61); }
 
-    template <uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 240>::type* = nullptr>
-    MIXMAX_HOST_AND_DEVICE constexpr inline void updateState() {
-        uint64_t PartialSumOverOld    = m_State[0];
-        uint64_t oldPartialSumOverOld = PartialSumOverOld;
+    MIXMAX_HOST_AND_DEVICE
+    static inline constexpr std::uint64_t MOD_MERSENNE(std::uint64_t aVal) noexcept {
+        return (aVal & M61) + (aVal >> 61);
+    }
+
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 240>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE MIXMAX_CONSTEXPR inline void updateState() noexcept {
+        auto PartialSumOverOld    = m_State[0];
+        auto oldPartialSumOverOld = PartialSumOverOld;
         auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
         MIXMAX_UNROLL(238)
-        for (int i = 1; i < N; ++i) {
+        for (auto i = 1; i < N; ++i) {
             const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
             PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
             lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
             m_SumOverNew    = MOD_MERSENNE(m_SumOverNew + lV);
         }
-        oldPartialSumOverOld = F_MOD_MUL_M61(0, SPECIAL, oldPartialSumOverOld);
+        oldPartialSumOverOld = F_MOD_MUL_M61(0, 487013230256099140, oldPartialSumOverOld);
         m_State[1]           = MOD_MERSENNE(oldPartialSumOverOld + m_State[1]);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + oldPartialSumOverOld);
         m_counter            = 0;
     }
 
-    template <uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 17>::type* = nullptr>
-    MIXMAX_HOST_AND_DEVICE constexpr inline void updateState() {
-        uint64_t PartialSumOverOld = m_State[0];
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 17>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE MIXMAX_CONSTEXPR inline void updateState() noexcept {
+        auto PartialSumOverOld = m_State[0];
         auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
         MIXMAX_UNROLL(15)
-        for (int i = 1; i < N; ++i) {
+        for (auto i = 1; i < N; ++i) {
             const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
             PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
             lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
             m_SumOverNew    = MOD_MERSENNE(m_SumOverNew + lV);
         }
-
         m_counter = 0;
     }
 
-    template <uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 8>::type* = nullptr>
-    MIXMAX_HOST_AND_DEVICE constexpr inline void updateState() {
-        uint64_t PartialSumOverOld = m_State[0];
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 8>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE MIXMAX_CONSTEXPR inline void updateState() noexcept {
+        auto PartialSumOverOld = m_State[0];
         auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
         MIXMAX_UNROLL(6)
@@ -227,20 +236,20 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
 
 #if defined(__x86_64__)
     MIXMAX_HOST_AND_DEVICE
-    static inline constexpr uint64_t MOD_128(const __uint128_t s) {
-        uint64_t s1 = (static_cast<uint64_t>(s) & M61) + (static_cast<uint64_t>(s >> 64) * 8) +
-                      (static_cast<uint64_t>(s) >> BITS);
-        return MOD_MERSENNE(s1);
+    static inline constexpr std::uint64_t MOD_128(const __uint128_t s) noexcept {
+        return MOD_MERSENNE((static_cast<std::uint64_t>(s) & M61) + (static_cast<std::uint64_t>(s >> 64) * 8) +
+                            (static_cast<std::uint64_t>(s) >> BITS));
     }
     MIXMAX_HOST_AND_DEVICE
-    static inline constexpr uint64_t F_MOD_MUL_M61(const uint64_t cum, const uint64_t a, const uint64_t b) {
-        const auto temp = static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b) + cum;
-        return MOD_128(temp);
+    static inline constexpr std::uint64_t F_MOD_MUL_M61(const std::uint64_t cum, const std::uint64_t a,
+                                                        const std::uint64_t b) noexcept {
+        return MOD_128(static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b) + cum);
     }
 #else
     MIXMAX_HOST_AND_DEVICE
-    static constexpr uint64_t F_MOD_MUL_M61(const uint64_t cum, const uint64_t s, const uint64_t a) {
-        static const uint64_t MASK32 = 0xFFFFFFFFULL;
+    static inline MIXMAX_CONSTEXPR std::uint64_t F_MOD_MUL_M61(const std::uint64_t cum, const std::uint64_t s,
+                                                               const std::uint64_t a) noexcept {
+        static constexpr std::uint64_t MASK32 = 0xFFFFFFFFULL;
         //
         auto o = (s)*a;
         const auto ph = ((s) >> 32);
@@ -255,7 +264,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
 #endif
 
     MIXMAX_HOST_AND_DEVICE
-    void appplyBigSkip(uint32_t clusterID, uint32_t machineID, uint32_t runID, uint32_t streamID) {
+    void appplyBigSkip(std::uint32_t clusterID, std::uint32_t machineID, std::uint32_t runID, std::uint32_t streamID) {
         /*
          * makes a derived state vector, Vout, from the mother state vector Vin
          * by skipping a large number of steps, determined by the given seeding ID's
@@ -272,25 +281,25 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
          * nd machines will have non-colliding source of random numbers. did I repeat it enough times? the
          * on-collision guarantee is absolute, not probabilistic
          */
-        static constexpr uint64_t skipMat240[128][240] =
-#include "mixmax_skip_N240.c"
+        static constexpr std::uint64_t skipMat240[128][240] =
+#include "mixmax/private/mixmax_skip_N240.c"
             ;
-        static constexpr uint64_t skipMatrix17[128][17] =
-#include "mixmax_skip_N17.c"
+        static constexpr std::uint64_t skipMatrix17[128][17] =
+#include "mixmax/private/mixmax_skip_N17.c"
             ;
-        static constexpr uint64_t skipMatrix8[128][8] =
-#include "mixmax_skip_N8.c"
+        static constexpr std::uint64_t skipMatrix8[128][8] =
+#include "mixmax/private/mixmax_skip_N8.c"
             ;
-        const uint64_t* skipMat[128];
+        const std::uint64_t* skipMat[128];
 
         for (int i = 0; i < 128; i++) {
-            if constexpr (M == 8) {
+            if (M == 8) {
                 skipMat[i] = skipMatrix8[i];
             }
-            if constexpr (M == 17) {
+            if (M == 17) {
                 skipMat[i] = skipMatrix17[i];
             }
-            if constexpr (M == 240) {
+            if (M == 240) {
                 skipMat[i] = skipMat240[i];
             }
         }
@@ -300,14 +309,14 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
             m_State[i] = 0;
         }
         u_int32_t idVector[4] = {streamID, runID, machineID, clusterID};
-        uint64_t cumulativeVector[M];
+        std::uint64_t cumulativeVector[M];
         for (auto idIndex = 0; idIndex < 4; idIndex++) {  // go from lower order to higher order ID
             auto currentID = idVector[idIndex], skipIndex = 0U;
             for (; currentID > 0; currentID >>= 1, skipIndex++) {  // bring up the r-th bit in the ID
                 if (!(currentID & 1)) {
                     continue;
                 }
-                const auto& skipVector = skipMat[skipIndex + idIndex * 8 * sizeof(uint32_t)];
+                const auto& skipVector = skipMat[skipIndex + idIndex * 8 * sizeof(std::uint32_t)];
                 for (int i = 0; i < M; i++) {
                     cumulativeVector[i] = 0;
                 }
@@ -346,9 +355,9 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
     /**
      * a 64-bit LCG from Knuth line 26, in combination with a bit swap is used to seed
      */
-    void seedLCG(uint64_t seed) {
-        static constexpr uint64_t MULT64 = 6364136223846793005ULL;
-        uint64_t overflow                = 0;
+    void seedLCG(std::uint64_t seed) {
+        static constexpr std::uint64_t MULT64 = 6364136223846793005ULL;
+        std::uint64_t overflow                = 0;
         seed *= MULT64;
         seed         = (seed << 32) ^ (seed >> 32);
         m_SumOverNew = seed & M61;
@@ -364,18 +373,18 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
     }
 
     MIXMAX_HOST_AND_DEVICE
-    void unpackAndBigSkip(uint64_t seed, uint64_t stream) {
-        const uint32_t seed_low    = seed & 0xFFFFFFFF;
-        const uint32_t seed_high   = (seed & (0xFFFFFFFFUL << 32)) >> 32;
-        const uint32_t stream_low  = stream & 0xFFFFFFFF;
-        const uint32_t stream_high = (stream & (0xFFFFFFFFUL << 32)) >> 32;
+    void unpackAndBigSkip(std::uint64_t seed, std::uint64_t stream) {
+        const std::uint32_t seed_low    = seed & 0xFFFFFFFF;
+        const std::uint32_t seed_high   = (seed & (0xFFFFFFFFUL << 32)) >> 32;
+        const std::uint32_t stream_low  = stream & 0xFFFFFFFF;
+        const std::uint32_t stream_high = (stream & (0xFFFFFFFFUL << 32)) >> 32;
         appplyBigSkip(stream_high, stream_low, seed_high, seed_low);
     }
     /**
      * Do not compile if state size is not valid
      */
     MIXMAX_HOST_AND_DEVICE
-    void validateTemplate() { static_assert(M == 240 || M == 17 || M == 8); }
+    void validateTemplate() { static_assert(M == 240 || M == 17 || M == 8, "State must be either 8, 17, 240"); }
 
    public:
 #ifndef __CUDA_ARCH__
