@@ -11,9 +11,10 @@
 #include "mixmax/mixmax.h"
 #include "original.h"
 
-#define BLOCKS (82 * 16)
-//#define BLOCKS 128
-#define THREADS 128
+//#define BLOCKS (82 * 16)
+#define BLOCKS 128
+//#define THREADS 128
+#define THREADS 256
 #define SIZE (BLOCKS * THREADS)
 #define TESTS (1 << 20)
 #define iterations (1 << 20)
@@ -169,7 +170,7 @@ void check_result() {
     original.sumtot = original::iterate_raw_vec(original.V, original.sumtot);
     for (uint64_t i = 0; i < TESTS; ++i) {
         const auto reference = original::flat(&original);
-        if (results[i] == reference) {
+        if (results[i] != reference) {
             std::cout << "ERROR: " << results[i] << "!=" << reference << std::endl;
             exit(EXIT_FAILURE);
         }

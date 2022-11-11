@@ -10,6 +10,20 @@
 
 namespace MIXMAX {
 
+#define MIXMAX_STRINGIFY_(...) #__VA_ARGS__
+#define MIXMAX_STRINGIFY(...) MIXMAX_STRINGIFY_(__VA_ARGS__)
+#if defined(__CUDA_ARCH__) || defined(__clang__)
+#define MIXMAX_GCC
+#elif defined(__GNUC__) || defined(__GNUG__)
+#define MIXMAX_GCC GCC
+#endif
+#if defined(__NVCC_DIAG_PRAGMA_SUPPORT__)
+#pragma nv_diag_suppress 1675
+#elif defined(__CUDA_ARCH__)
+#pragma diag_suppress 1675
+#endif
+#define MIXMAX_UNROLL(...) _Pragma(MIXMAX_STRINGIFY(MIXMAX_GCC unroll __VA_ARGS__))
+
 #ifdef __CUDACC__
 
 #define MIXMAX_HOST_AND_DEVICE __host__ __device__
@@ -29,7 +43,16 @@ namespace MIXMAX {
 #endif
 
 namespace internal {
-
+/**
+ * Figure of merit is entropy: best generator overall is N=240
+ * Vector size  | period q
+ *     N        | log10(q)  |   entropy
+ *              |
+ * ------------------------------------|
+ *       8      |    129    |    220.4 |
+ *      17      |    294    |    374.3 |
+ *     240      |   4389    |   8679.2 |
+ */
 template <uint8_t M>
 class MIXMAX_CLASS_ALIGN MixMaxRng {
    public:
@@ -41,7 +64,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
 
     /**
      * Basic seeding function.
-     * On GPU seeding is expensive so it is recommended to do so in another kenrel
+     * On GPU seeding is expensive so it is recommended to do so in another kernel
      * @param seed
      */
     MIXMAX_HOST_AND_DEVICE
@@ -103,6 +126,10 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
         return static_cast<double>(u) * INV_MERSBASE;
     }
 
+    // For compatibility with std::random
+    static constexpr uint64_t min() { return 0; }
+    static constexpr uint64_t max() { return 0x1FFFFFFFFFFFFFFF; }
+
    private:
     // Constants
     static constexpr double INV_MERSBASE = 0.43368086899420177360298E-18;
@@ -116,7 +143,17 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
     uint64_t m_SumOverNew;
     uint32_t m_counter;
     //
-
+    /**
+     * Table of parameters for MIXMAX
+     * Vector size  |
+     *     N        |      SPECIAL       |   SHIFT_ROTATION   |           MOD_MULSPEC
+     *              |
+     * -------------------------------------------------------------------------------------
+     *       8      |         0          |         53         |                none
+     *      17      |         0          |         36         |                none
+     *     240      | 487013230256099140 |         51         |   fmodmulM61( 0, SPECIAL , (k) )
+     */
+    //
     MIXMAX_HOST_AND_DEVICE
     static inline constexpr uint64_t SHIFT_ROTATION() {
         if constexpr (M == 8) {
@@ -132,31 +169,58 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
 
     MIXMAX_HOST_AND_DEVICE
     static inline constexpr uint64_t ROTATE_61(const uint64_t aVal) {
-        return ((aVal << SHIFT_ROTATION()) & M61) | (aVal >> (61 - SHIFT_ROTATION()));
+        constexpr auto SHIFT = SHIFT_ROTATION();
+        return ((aVal << SHIFT) & M61) | (aVal >> (61 - SHIFT));
     }
     MIXMAX_HOST_AND_DEVICE
     static inline constexpr uint64_t MOD_MERSENNE(uint64_t aVal) { return (aVal & M61) + (aVal >> 61); }
 
-    MIXMAX_HOST_AND_DEVICE
-    inline constexpr void updateState() {
+    template <uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 240>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE constexpr inline void updateState() {
         uint64_t PartialSumOverOld    = m_State[0];
         uint64_t oldPartialSumOverOld = PartialSumOverOld;
         auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
-#ifdef __CUDA_ARCH__
-// Helping NVCC unrolling the loop
-#pragma unroll N - 1
-#endif
+        MIXMAX_UNROLL(238)
         for (int i = 1; i < N; ++i) {
             const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
             PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
             lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
             m_SumOverNew    = MOD_MERSENNE(m_SumOverNew + lV);
         }
-        if constexpr (M == 240) {
-            oldPartialSumOverOld = F_MOD_MUL_M61(0, SPECIAL, oldPartialSumOverOld);
-            m_State[1]           = MOD_MERSENNE(oldPartialSumOverOld + m_State[1]);
-            m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + oldPartialSumOverOld);
+        oldPartialSumOverOld = F_MOD_MUL_M61(0, SPECIAL, oldPartialSumOverOld);
+        m_State[1]           = MOD_MERSENNE(oldPartialSumOverOld + m_State[1]);
+        m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + oldPartialSumOverOld);
+        m_counter            = 0;
+    }
+
+    template <uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 17>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE constexpr inline void updateState() {
+        uint64_t PartialSumOverOld = m_State[0];
+        auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
+        m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
+        MIXMAX_UNROLL(15)
+        for (int i = 1; i < N; ++i) {
+            const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
+            PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
+            lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
+            m_SumOverNew    = MOD_MERSENNE(m_SumOverNew + lV);
+        }
+
+        m_counter = 0;
+    }
+
+    template <uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 8>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE constexpr inline void updateState() {
+        uint64_t PartialSumOverOld = m_State[0];
+        auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
+        m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
+        MIXMAX_UNROLL(6)
+        for (int i = 1; i < N; ++i) {
+            const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
+            PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
+            lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
+            m_SumOverNew    = MOD_MERSENNE(m_SumOverNew + lV);
         }
         m_counter = 0;
     }
@@ -238,8 +302,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
         u_int32_t idVector[4] = {streamID, runID, machineID, clusterID};
         uint64_t cumulativeVector[M];
         for (auto idIndex = 0; idIndex < 4; idIndex++) {  // go from lower order to higher order ID
-            auto currentID = idVector[idIndex];
-            auto skipIndex = 0;
+            auto currentID = idVector[idIndex], skipIndex = 0U;
             for (; currentID > 0; currentID >>= 1, skipIndex++) {  // bring up the r-th bit in the ID
                 if (!(currentID & 1)) {
                     continue;
@@ -250,7 +313,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
                 }
                 for (auto j = 0; j < M; j++) {  // j is lag, enumerates terms of the poly
                     // for zero lag Y is already given
-                    auto skipElement = skipVector[j];  // same skipElement for all i
+                    const auto skipElement = skipVector[j];  // same skipElement for all i
                     for (auto i = 0; i < M; i++) {
                         cumulativeVector[i] =
                             F_MOD_MUL_M61(cumulativeVector[i], skipElement, i == 0 ? m_SumOverNew : m_State[i - 1]);
@@ -269,12 +332,14 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
     /**
      * Sets the generator to the unary vector
      */
+    MIXMAX_HOST_AND_DEVICE
     void seedZero() {
         for (auto& element : m_State) {
             element = 1;
         }
         m_SumOverNew = 1;
         updateState();
+        // Skip the first element
         m_counter = 1;
     }
 
@@ -298,6 +363,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
         m_counter    = N;
     }
 
+    MIXMAX_HOST_AND_DEVICE
     void unpackAndBigSkip(uint64_t seed, uint64_t stream) {
         const uint32_t seed_low    = seed & 0xFFFFFFFF;
         const uint32_t seed_high   = (seed & (0xFFFFFFFFUL << 32)) >> 32;
@@ -308,6 +374,7 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
     /**
      * Do not compile if state size is not valid
      */
+    MIXMAX_HOST_AND_DEVICE
     void validateTemplate() { static_assert(M == 240 || M == 17 || M == 8); }
 
    public:
@@ -321,9 +388,6 @@ class MIXMAX_CLASS_ALIGN MixMaxRng {
         return os;
     }
 #endif
-    // For compatibility with std::random
-    static constexpr uint64_t min() { return 0; }
-    static constexpr uint64_t max() { return 0x1FFFFFFFFFFFFFFF; }
 };
 }  // namespace internal
 
@@ -339,5 +403,16 @@ using MixMaxRng240 = internal::MixMaxRng<240>;
 #undef MIXMAX_DEVICE
 #undef MIXMAX_KERNEL
 #undef MIXMAX_CLASS_ALIGN
+#undef MIXMAX_UNROLL
+#undef MIXMAX_STRINGIFY_
+#undef MIXMAX_STRINGIFY
+#ifdef MIXMAX_GCC
+#undef MIXMAX_GCC
+#if defined(__NVCC_DIAG_PRAGMA_SUPPORT__)
+#pragma nv_diag_default 1675
+#elif defined(__CUDA_ARCH__)
+#pragma diag_default 1675
+#endif
+#endif
 
 #endif  // MIXMAX_INCLUDE_MIXMAXRNG_H_

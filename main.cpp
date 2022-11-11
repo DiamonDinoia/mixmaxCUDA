@@ -11,7 +11,7 @@
 #include "clean.h"
 #include "mixmax.hpp"
 
-constexpr auto iterations = 1ULL << 60;
+constexpr auto iterations = 1ULL << 31;
 
 void test_original() {
     original::rng_state_t original{{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, 1, 2};
@@ -87,9 +87,10 @@ void test_seeding() {
 }
 
 void test_branching() {
+    const auto seed = std::random_device()();
     mixmax_engine gen{};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
-    gen.seed_spbox(42);
-    MIXMAX::MixMaxRng240 rng{42};
+    gen.seed_spbox(seed);
+    MIXMAX::MixMaxRng240 rng{seed};
     for (auto i = 0ULL; i < iterations; ++i) {
         if (rng() != gen()) {
             throw std::runtime_error("RNG WRONG RESULT");

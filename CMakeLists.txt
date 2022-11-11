@@ -59,12 +59,12 @@ if (CMAKE_BUILD_TYPE MATCHES Debug)
     set(FLAGS -O0 -fstack-protector-all -Wall -Wextra -pedantic)
     add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:-G>")
 elseif (CMAKE_BUILD_TYPE MATCHES Release)
-    set(FLAGS -O3 -fcx-limited-range -ffp-contract=fast -freciprocal-math
+    set(FLAGS -O3 -ffp-contract=fast -freciprocal-math
             -fmerge-all-constants -fno-math-errno -march=native -funroll-loops
             -ftree-vectorize)
 elseif (CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
     add_definitions(-DDEBUG)
-    set(FLAGS -g -fno-omit-frame-pointer -fcx-limited-range
+    set(FLAGS -g -fno-omit-frame-pointer
             -ffp-contract=fast -freciprocal-math -fmerge-all-constants
             -fno-math-errno -march=native -funroll-loops -ftree-vectorize)
     add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:-G>")
