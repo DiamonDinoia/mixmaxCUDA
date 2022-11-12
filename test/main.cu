@@ -9,10 +9,10 @@
 #include <functional>
 #include <iostream>
 #include <mixmax.hpp>
-#include <numeric>
-#include <random>
 #undef MULWU
 #undef MOD_MERSENNE
+#include <numeric>
+#include <random>
 
 constexpr auto ITERATIONS = 1ULL << 20;
 constexpr auto TESTS      = 1ULL << 20;
@@ -77,7 +77,7 @@ __global__ void rngKernel(T* rngs, double* results) {
 }
 
 template <typename T>
-T variance(const std::vector<T>& vec) {
+T stdev(const std::vector<T>& vec) {
     const size_t sz = vec.size();
     if (sz == 1) {
         return 0.0;
@@ -88,57 +88,55 @@ T variance(const std::vector<T>& vec) {
     auto variance_func = [&mean, &sz](T accumulator, const T& val) {
         return accumulator + ((val - mean) * (val - mean) / (sz - 1));
     };
-    return std::accumulate(vec.begin(), vec.end(), 0.0, variance_func);
+    return std::sqrt(std::accumulate(vec.begin(), vec.end(), 0.0, variance_func));
 }
 
 template <typename T>
-void benchmack(const std::string& message, const uint64_t threads, const uint64_t blocks, const uint64_t seed) {
+void Benchmack(const std::string& message, const uint64_t threads, const uint64_t blocks, const uint64_t seed) {
+
     const auto size = threads * blocks;
     T* gpuRGNs;
     double* results;
     mtgp32_kernel_params* devKernelParams;
     CUDA_CALL(cudaMalloc(&results, sizeof(double) * size));
 
+    // RNG initialization
     if constexpr (std::is_same<curandStateMtgp32, T>()) {
         CUDA_CALL(cudaMalloc(&gpuRGNs, sizeof(T) * blocks));
         CUDA_CALL(cudaMalloc(&devKernelParams, sizeof(mtgp32_kernel_params)));
         CURAND_CALL(curandMakeMTGP32Constants(mtgp32dc_params_fast_11213, devKernelParams));
+        CURAND_CALL(curandMakeMTGP32KernelState(gpuRGNs, mtgp32dc_params_fast_11213, devKernelParams, blocks, seed));
     } else {
         CUDA_CALL(cudaMalloc(&gpuRGNs, sizeof(T) * size));
+        initialize_rngs<<<blocks, threads>>>(seed, gpuRGNs);
     }
 
     std::vector<double> times;
     double total_time = 0.;
     cudaEvent_t start, stop;
-    float elapsedTime;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     times.reserve(RUNS);
     for (auto i = 0ULL; i < RUNS; ++i) {
-        // RNG initialization
-        if constexpr (std::is_same<curandStateMtgp32, T>()) {
-            CURAND_CALL(
-                curandMakeMTGP32KernelState(gpuRGNs, mtgp32dc_params_fast_11213, devKernelParams, blocks, seed));
-        } else {
-            initialize_rngs<<<blocks, threads>>>(seed, gpuRGNs);
-        }
-        cudaDeviceSynchronize();
-        cudaEventRecord(start);
+        CUDA_CALL(cudaDeviceSynchronize());
+        CUDA_CALL(cudaEventRecord(start));
         rngKernel<<<blocks, threads>>>(gpuRGNs, results);
-        cudaEventRecord(stop);
-        cudaEventSynchronize(stop);
-        cudaEventElapsedTime(&elapsedTime, start, stop);
+        CUDA_CALL(cudaEventRecord(stop));
+        CUDA_CALL(cudaEventSynchronize(stop));
+        float elapsedTime = 0;
+        CUDA_CALL(cudaEventElapsedTime(&elapsedTime, start, stop));
         times.emplace_back(elapsedTime);
         total_time += elapsedTime;
     }
 
-    cudaFree(gpuRGNs);
-    cudaFree(results);
+    CUDA_CALL(cudaFree(gpuRGNs));
+    CUDA_CALL(cudaFree(results));
+    CUDA_CALL(cudaEventDestroy(start));
+    CUDA_CALL(cudaEventDestroy(stop));
     if constexpr (std::is_same<curandStateMtgp32, T>()) {
-        cudaFree(devKernelParams);
+        CUDA_CALL(cudaFree(devKernelParams));
     }
-    std::cout << message << " required " << total_time / RUNS << " milliseconds" << std::endl;
-    std::cout << message << " stdev " << variance(times) << " milliseconds" << std::endl;
+    std::cout << message << " required " << total_time / RUNS << "+-" << stdev(times) << " ms" << std::endl;
 }
 
 __global__ void runRNG(uint64_t* results, uint32_t seed1, uint32_t seed2, uint32_t seed3, uint32_t seed4) {
@@ -178,21 +176,21 @@ int main(const int argc, const char** argv) {
     auto blocks     = 82 * 12;
     std::cout << "Using seed " << seed << std::endl;
     std::cout << "Using blocks " << blocks << " threads " << threads << std::endl;
-    benchmack<GPURandom<curandStatePhilox4_32_10>>("Philox4_32_10", threads, blocks, seed);
-    benchmack<GPURandom<curandStateMRG32k3a>>("MRG32k3a", threads, blocks, seed);
-    benchmack<GPURandom<curandStateXORWOW>>("XORWOW", threads, blocks, seed);
-    benchmack<MixMaxGPU<240>>("MixMaxGPU<240>", threads, blocks, seed);
-    benchmack<MixMaxGPU<17>>("MixMaxGPU<17>", threads, blocks, seed);
-    benchmack<MixMaxGPU<8>>("MixMaxGPU<8>", threads, blocks, seed);
+    Benchmack<GPURandom<curandStatePhilox4_32_10>>("Philox4_32_10", threads, blocks, seed);
+    Benchmack<GPURandom<curandStateMRG32k3a>>("MRG32k3a", threads, blocks, seed);
+    Benchmack<GPURandom<curandStateXORWOW>>("XORWOW", threads, blocks, seed);
+    Benchmack<MixMaxGPU<240>>("MixMaxGPU<240>", threads, blocks, seed);
+    Benchmack<MixMaxGPU<17>>("MixMaxGPU<17>", threads, blocks, seed);
+    Benchmack<MixMaxGPU<8>>("MixMaxGPU<8>", threads, blocks, seed);
     threads = 256;
     blocks  = 128;
     std::cout << "Using blocks " << blocks << " threads " << threads << std::endl;
-    benchmack<curandStateMtgp32>("MTGP32", threads, blocks, seed);
-    benchmack<GPURandom<curandStatePhilox4_32_10>>("Philox4_32_10", threads, blocks, seed);
-    benchmack<GPURandom<curandStateMRG32k3a>>("MRG32k3a", threads, blocks, seed);
-    benchmack<GPURandom<curandStateXORWOW>>("XORWOW", threads, blocks, seed);
-    benchmack<MixMaxGPU<240>>("MixMaxGPU<240>", threads, blocks, seed);
-    benchmack<MixMaxGPU<17>>("MixMaxGPU<17>", threads, blocks, seed);
-    benchmack<MixMaxGPU<8>>("MixMaxGPU<8>", threads, blocks, seed);
+    Benchmack<curandStateMtgp32>("MTGP32", threads, blocks, seed);
+    Benchmack<GPURandom<curandStatePhilox4_32_10>>("Philox4_32_10", threads, blocks, seed);
+    Benchmack<GPURandom<curandStateMRG32k3a>>("MRG32k3a", threads, blocks, seed);
+    Benchmack<GPURandom<curandStateXORWOW>>("XORWOW", threads, blocks, seed);
+    Benchmack<MixMaxGPU<240>>("MixMaxGPU<240>", threads, blocks, seed);
+    Benchmack<MixMaxGPU<17>>("MixMaxGPU<17>", threads, blocks, seed);
+    Benchmack<MixMaxGPU<8>>("MixMaxGPU<8>", threads, blocks, seed);
     return 0;
 }

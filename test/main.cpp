@@ -10,9 +10,8 @@
 #undef MOD_MERSENNE
 #include <functional>
 #include <random>
-#include <thread>
 
-constexpr auto ITERATIONS = 1ULL << 31;
+constexpr auto ITERATIONS = 1ULL << 30;
 constexpr auto RUNS       = 5;
 
 const auto seed1          = std::random_device()();
@@ -62,7 +61,7 @@ void test_seeding() {
 }
 
 template <typename T>
-T variance(const std::vector<T>& vec) {
+T stdev(const std::vector<T>& vec) {
     const size_t sz = vec.size();
     if (sz == 1) {
         return 0.0;
@@ -73,10 +72,10 @@ T variance(const std::vector<T>& vec) {
     auto variance_func = [&mean, &sz](T accumulator, const T& val) {
         return accumulator + ((val - mean) * (val - mean) / (sz - 1));
     };
-    return std::accumulate(vec.begin(), vec.end(), 0.0, variance_func);
+    return std::sqrt(std::accumulate(vec.begin(), vec.end(), 0.0, variance_func));
 }
 
-void benchmack(std::function<double()> func, const std::string& message) {
+void Benchmack(std::function<double()> func, const std::string& message) {
     double time = 0.;
     std::vector<double> times;
     times.reserve(RUNS);
@@ -86,12 +85,12 @@ void benchmack(std::function<double()> func, const std::string& message) {
         time += current_time;
     }
     std::cout << message << " required " << time / RUNS << " milliseconds" << std::endl;
-    std::cout << message << " stdev " << variance(times) << " milliseconds" << std::endl;
+    std::cout << message << " stdev " << stdev(times) << " milliseconds" << std::endl;
 }
 
 int main(int argc, char** argv) {
     test_seeding();
-    benchmack(test_original, "ORIGINAL");
-    benchmack(test_opt, "OPTIMIZED");
+    Benchmack(test_original, "ORIGINAL");
+    Benchmack(test_opt, "OPTIMIZED");
     return 0;
 }
