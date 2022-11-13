@@ -48,6 +48,9 @@ namespace MIXMAX {
 #endif
 
 namespace internal {
+
+enum { SMALL = 8, MEDIUM = 17, LARGE = 240 };
+
 /**
  * Figure of merit is entropy: best generator overall is N=240
  * Vector size  | period q
@@ -185,6 +188,7 @@ class MixMaxRng {
     // Constants
     static constexpr double INV_MERSBASE = 0.43368086899420177360298E-18;
     // The state is M-1 because the last element is stored in the variable m_SumOverNew outside the vector
+    //    enum { N = M - 1, BITS = 61U, M61 = 0x1FFFFFFFFFFFFFFF };
     static constexpr std::uint8_t N    = M - 1;
     static constexpr std::uint8_t BITS = 61U;
     static constexpr std::uint64_t M61 = 0x1FFFFFFFFFFFFFFF;
@@ -203,39 +207,40 @@ class MixMaxRng {
      *      17      |         0          |         36         |                none
      *     240      | 487013230256099140 |         51         |   fmodmulM61( 0, SPECIAL , (k) )
      */
-    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 240>::type* = nullptr>
-    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint64_t SHIFT_ROTATION() noexcept {
-        return 51;
+    enum { SMALL_SHIFT = 53U, MEDIUM_SHIFT = 36U, LARGE_SHIFT = 51U };
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == LARGE>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint8_t SHIFT_ROTATION() noexcept {
+        return LARGE_SHIFT;
     }
 
-    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 17>::type* = nullptr>
-    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint64_t SHIFT_ROTATION() noexcept {
-        return 36;
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == MEDIUM>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint8_t SHIFT_ROTATION() noexcept {
+        return MEDIUM_SHIFT;
     }
 
-    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 8>::type* = nullptr>
-    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint64_t SHIFT_ROTATION() noexcept {
-        return 53;
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == SMALL>::type* = nullptr>
+    MIXMAX_HOST_AND_DEVICE static inline constexpr std::uint8_t SHIFT_ROTATION() noexcept {
+        return SMALL_SHIFT;
     }
 
     MIXMAX_HOST_AND_DEVICE
     static inline constexpr std::uint64_t ROTATE_61(const std::uint64_t aVal) noexcept {
-        return ((aVal << SHIFT_ROTATION()) & M61) | (aVal >> (61 - SHIFT_ROTATION()));
+        return ((aVal << SHIFT_ROTATION()) & M61) | (aVal >> (61U - SHIFT_ROTATION()));
     }
 
     MIXMAX_HOST_AND_DEVICE
     static inline constexpr std::uint64_t MOD_MERSENNE(std::uint64_t aVal) noexcept {
-        return (aVal & M61) + (aVal >> 61);
+        return (aVal & M61) + (aVal >> 61U);
     }
 
-    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 240>::type* = nullptr>
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == LARGE>::type* = nullptr>
     MIXMAX_HOST_AND_DEVICE MIXMAX_CONSTEXPR inline void updateState() noexcept {
         auto PartialSumOverOld    = m_State[0];
         auto oldPartialSumOverOld = PartialSumOverOld;
         auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
         MIXMAX_UNROLL(238)
-        for (auto i = 1; i < N; ++i) {
+        for (std::uint8_t i = 1U; i < N; ++i) {
             const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
             PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
             lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
@@ -247,13 +252,13 @@ class MixMaxRng {
         m_Counter            = 0;
     }
 
-    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 17>::type* = nullptr>
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == MEDIUM>::type* = nullptr>
     MIXMAX_HOST_AND_DEVICE MIXMAX_CONSTEXPR inline void updateState() noexcept {
         auto PartialSumOverOld = m_State[0];
         auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
         MIXMAX_UNROLL(15)
-        for (auto i = 1; i < N; ++i) {
+        for (std::uint8_t i = 1U; i < N; ++i) {
             const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
             PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
             lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
@@ -262,13 +267,13 @@ class MixMaxRng {
         m_Counter = 0;
     }
 
-    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == 8>::type* = nullptr>
+    template <std::uint8_t STATE_SIZE = M, typename std::enable_if<STATE_SIZE == SMALL>::type* = nullptr>
     MIXMAX_HOST_AND_DEVICE MIXMAX_CONSTEXPR inline void updateState() noexcept {
         auto PartialSumOverOld = m_State[0];
         auto lV = m_State[0] = MOD_MERSENNE(m_SumOverNew + PartialSumOverOld);
         m_SumOverNew         = MOD_MERSENNE(m_SumOverNew + lV);
         MIXMAX_UNROLL(6)
-        for (int i = 1; i < N; ++i) {
+        for (std::uint8_t i = 1U; i < N; ++i) {
             const auto lRotatedPreviousPartialSumOverOld = ROTATE_61(PartialSumOverOld);
             PartialSumOverOld                            = MOD_MERSENNE(PartialSumOverOld + m_State[i]);
             lV = m_State[i] = MOD_MERSENNE(lV + PartialSumOverOld + lRotatedPreviousPartialSumOverOld);
@@ -337,13 +342,13 @@ class MixMaxRng {
         const std::uint64_t* skipMat[128];
 
         for (int i = 0; i < 128; i++) {
-            if MIXMAX_CONSTEXPR (M == 8) {
+            if MIXMAX_CONSTEXPR (M == SMALL) {
                 skipMat[i] = skipMatrix8[i];
             }
-            if MIXMAX_CONSTEXPR (M == 17) {
+            if MIXMAX_CONSTEXPR (M == MEDIUM) {
                 skipMat[i] = skipMatrix17[i];
             }
-            if MIXMAX_CONSTEXPR (M == 240) {
+            if MIXMAX_CONSTEXPR (M == LARGE) {
                 skipMat[i] = skipMat240[i];
             }
         }
@@ -428,7 +433,9 @@ class MixMaxRng {
      * Do not compile if state size is not valid
      */
     MIXMAX_HOST_AND_DEVICE
-    void validateTemplate() { static_assert(M == 240 || M == 17 || M == 8, "State must be either 8, 17, 240"); }
+    void validateTemplate() {
+        static_assert(M == LARGE || M == MEDIUM || M == SMALL, "State must be either 8, 17, 240");
+    }
 
    public:
 #ifndef __CUDA_ARCH__
@@ -444,9 +451,9 @@ class MixMaxRng {
 };
 }  // namespace internal
 
-using MixMaxRng8   = internal::MixMaxRng<8>;
-using MixMaxRng17  = internal::MixMaxRng<17>;
-using MixMaxRng240 = internal::MixMaxRng<240>;
+using MixMaxRng8   = internal::MixMaxRng<internal::SMALL>;
+using MixMaxRng17  = internal::MixMaxRng<internal::MEDIUM>;
+using MixMaxRng240 = internal::MixMaxRng<internal::LARGE>;
 
 }  // namespace MIXMAX
 
