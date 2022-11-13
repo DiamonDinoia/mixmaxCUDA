@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <ostream>
-#include <valarray>
 
 namespace MIXMAX {
 
