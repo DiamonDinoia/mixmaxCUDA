@@ -136,6 +136,7 @@ class MixMaxRng {
     // For compatibility with std::random
     static constexpr std::uint64_t min() noexcept { return 0; }
     static constexpr std::uint64_t max() noexcept { return 0x1FFFFFFFFFFFFFFF; }
+    using result_type = std::uint64_t;
 
     MIXMAX_HOST_AND_DEVICE
     MIXMAX_CONSTEXPR MixMaxRng(const uint64_t* state, uint64_t sum_over_new, uint32_t counter)
