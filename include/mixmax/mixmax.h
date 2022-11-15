@@ -65,7 +65,6 @@ class MixMaxRng {
    public:
     MIXMAX_HOST_AND_DEVICE
     MixMaxRng() {
-        validateTemplate();
         seedZero();
     }
 
@@ -76,7 +75,6 @@ class MixMaxRng {
      */
     MIXMAX_HOST_AND_DEVICE
     MixMaxRng(std::uint64_t seed) {
-        validateTemplate();
         if (seed == 0) {
             seedZero();
             return;
@@ -97,8 +95,7 @@ class MixMaxRng {
      */
     MIXMAX_HOST_AND_DEVICE
     MixMaxRng(std::uint32_t clusterID, std::uint32_t machineID, std::uint32_t runID, std::uint32_t streamID) {
-        validateTemplate();
-        appplyBigSkip(clusterID, machineID, runID, streamID);
+        applyBigSkip(clusterID, machineID, runID, streamID);
     }
 
     /**
@@ -108,7 +105,6 @@ class MixMaxRng {
      */
     MIXMAX_HOST_AND_DEVICE
     MixMaxRng(std::uint64_t seed, std::uint64_t stream) {
-        validateTemplate();
         unpackAndBigSkip(seed, stream);
     }
 
@@ -313,7 +309,7 @@ class MixMaxRng {
 #endif
 
     MIXMAX_HOST_AND_DEVICE
-    void appplyBigSkip(std::uint32_t clusterID, std::uint32_t machineID, std::uint32_t runID,
+    void applyBigSkip(std::uint32_t clusterID, std::uint32_t machineID, std::uint32_t runID,
                        std::uint32_t streamID) noexcept {
         /*
          * makes a derived state vector, Vout, from the mother state vector Vin
@@ -428,16 +424,13 @@ class MixMaxRng {
         const std::uint32_t seed_high   = (seed & (0xFFFFFFFFUL << 32)) >> 32;
         const std::uint32_t stream_low  = stream & 0xFFFFFFFF;
         const std::uint32_t stream_high = (stream & (0xFFFFFFFFUL << 32)) >> 32;
-        appplyBigSkip(stream_high, stream_low, seed_high, seed_low);
+        applyBigSkip(stream_high, stream_low, seed_high, seed_low);
     }
+
     /**
      * Do not compile if state size is not valid
      */
-    MIXMAX_HOST_AND_DEVICE
-    void validateTemplate() {
-        static_assert(M == LARGE || M == MEDIUM || M == SMALL, "State must be either 8, 17, 240");
-    }
-
+    static_assert(M == LARGE || M == MEDIUM || M == SMALL, "State must be either 8, 17, 240");
    public:
 #ifndef __CUDA_ARCH__
     friend std::ostream& operator<<(std::ostream& os, const MixMaxRng& rng) {
