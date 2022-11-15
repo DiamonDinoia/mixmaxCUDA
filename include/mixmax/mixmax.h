@@ -186,12 +186,12 @@ class MixMaxRng {
 
    private:
     // Constants
-    static constexpr double INV_MERSBASE = 0.43368086899420177360298E-18;
+    static constexpr double INV_MERSBASE{0.43368086899420177360298E-18};
     // The state is M-1 because the last element is stored in the variable m_SumOverNew outside the vector
     //    enum { N = M - 1, BITS = 61U, M61 = 0x1FFFFFFFFFFFFFFF };
-    static constexpr std::uint8_t N    = M - 1;
-    static constexpr std::uint8_t BITS = 61U;
-    static constexpr std::uint64_t M61 = 0x1FFFFFFFFFFFFFFF;
+    static constexpr std::uint8_t N{M - 1};
+    static constexpr std::uint8_t BITS{61U};
+    static constexpr std::uint64_t M61{0x1FFFFFFFFFFFFFFF};
     // RNG state
     std::uint64_t m_State[N];
     std::uint64_t m_SumOverNew;
@@ -282,7 +282,8 @@ class MixMaxRng {
         m_Counter = 0;
     }
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) && \
+    (!defined(__CUDA_ARCH__) || (defined(__CUDA_ARCH__) && __CUDACC_VER_MAJOR__ >= 11 && __CUDACC_VER_MINOR__ >= 5))
     MIXMAX_HOST_AND_DEVICE
     static inline constexpr std::uint64_t MOD_128(const __uint128_t s) noexcept {
         return MOD_MERSENNE((static_cast<std::uint64_t>(s) & M61) + (static_cast<std::uint64_t>(s >> 64) * 8) +
@@ -297,7 +298,7 @@ class MixMaxRng {
     MIXMAX_HOST_AND_DEVICE
     static inline MIXMAX_CONSTEXPR std::uint64_t F_MOD_MUL_M61(const std::uint64_t cum, const std::uint64_t s,
                                                                const std::uint64_t a) noexcept {
-        static constexpr std::uint64_t MASK32 = 0xFFFFFFFFULL;
+        constexpr std::uint64_t MASK32 = 0xFFFFFFFFULL;
         //
         auto o = (s)*a;
         const auto ph = ((s) >> 32);
