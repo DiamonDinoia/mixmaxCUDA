@@ -138,7 +138,7 @@ class MixMaxRng {
         }
     }
 
-#ifdef __CUDACC__
+#ifdef __CUDA_ARCH__
     MIXMAX_HOST_AND_DEVICE
     constexpr MixMaxRng(MixMaxRng const& other) : m_SumOverNew(other.m_SumOverNew), m_Counter(other.m_Counter) {
         static_assert(N == other.N, "Cannot assign two instances with different state size");
