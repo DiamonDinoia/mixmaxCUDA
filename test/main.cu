@@ -14,7 +14,7 @@
 #include <numeric>
 #include <random>
 
-constexpr auto ITERATIONS = 1ULL << 20;
+constexpr auto ITERATIONS = 1ULL << 24;
 constexpr auto TESTS      = 1ULL << 20;
 constexpr auto RUNS       = 5;
 
@@ -156,7 +156,7 @@ void check_result() {
     runRNG<<<1, 1>>>(gpu_results, seed1, seed2, seed3, seed4);
     CUDA_CALL(cudaDeviceSynchronize());
     std::vector<uint64_t> results(TESTS);
-    CUDA_CALL(cudaMemcpy(results.data(), gpu_results, sizeof(uint64_t) * TESTS, cudaMemcpyDefault));
+    CUDA_CALL(cudaMemcpy(results.data(), gpu_results, sizeof(uint64_t) * TESTS, cudaMemcpyDeviceToHost));
     mixmax_engine gen{seed1, seed2, seed3,
                       seed4};  // Create a Mixmax object and initialize the RNG with four 32-bit seeds 0,0,0,1
     for (uint64_t i = 0; i < TESTS; ++i) {
@@ -166,6 +166,7 @@ void check_result() {
             exit(EXIT_FAILURE);
         }
     }
+    CUDA_CALL(cudaFree(gpu_results));
     std::cout << "TESTS [OK]" << std::endl;
 }
 

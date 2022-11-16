@@ -64,9 +64,7 @@ template <std::uint8_t M>
 class MixMaxRng {
    public:
     MIXMAX_HOST_AND_DEVICE
-    MixMaxRng() {
-        seedZero();
-    }
+    MixMaxRng() { seedZero(); }
 
     /**
      * Basic seeding function.
@@ -104,9 +102,7 @@ class MixMaxRng {
      * Useful in a parallel application where stream can be the CPU/GPU thread id
      */
     MIXMAX_HOST_AND_DEVICE
-    MixMaxRng(std::uint64_t seed, std::uint64_t stream) {
-        unpackAndBigSkip(seed, stream);
-    }
+    MixMaxRng(std::uint64_t seed, std::uint64_t stream) { unpackAndBigSkip(seed, stream); }
 
     /**
      * Generates an uniform 64bits integer
@@ -145,12 +141,14 @@ class MixMaxRng {
 #ifdef __CUDACC__
     MIXMAX_HOST_AND_DEVICE
     constexpr MixMaxRng(MixMaxRng const& other) : m_SumOverNew(other.m_SumOverNew), m_Counter(other.m_Counter) {
+        static_assert(N == other.N, "Cannot assign two instances with different state size");
         for (auto i = 0; i < N; ++i) {
             m_State[i] = other.m_State[i];
         }
     }
     MIXMAX_HOST_AND_DEVICE
     constexpr MixMaxRng(MixMaxRng&& other) noexcept : m_SumOverNew(other.m_SumOverNew), m_Counter(other.m_Counter) {
+        static_assert(N == other.N, "Cannot assign two instances with different state size");
         for (auto i = 0; i < N; ++i) {
             m_State[i] = other.m_State[i];
         }
@@ -158,20 +156,27 @@ class MixMaxRng {
 
     MIXMAX_HOST_AND_DEVICE
     MIXMAX_CONSTEXPR MixMaxRng& operator=(MixMaxRng&& other) noexcept {
+        static_assert(N == other.N, "Cannot assign two instances with different state size");
         m_SumOverNew = other.m_SumOverNew;
         m_Counter    = other.m_Counter;
         for (auto i = 0; i < N; ++i) {
             m_State[i] = other.m_State[i];
         }
+        return *this;
     }
 
     MIXMAX_HOST_AND_DEVICE
-    MIXMAX_CONSTEXPR MixMaxRng& operator=(MixMaxRng const& other) {
+    MIXMAX_CONSTEXPR MixMaxRng& operator=(const MixMaxRng& other) {
+        static_assert(N == other.N, "Cannot assign two instances with different state size");
+        if (this == other) {
+            return *this;
+        }
         m_SumOverNew = other.m_SumOverNew;
         m_Counter    = other.m_Counter;
         for (auto i = 0; i < N; ++i) {
             m_State[i] = other.m_State[i];
         }
+        return *this;
     }
 #else
     constexpr MixMaxRng(MixMaxRng const& other) = default;
@@ -310,7 +315,7 @@ class MixMaxRng {
 
     MIXMAX_HOST_AND_DEVICE
     void applyBigSkip(std::uint32_t clusterID, std::uint32_t machineID, std::uint32_t runID,
-                       std::uint32_t streamID) noexcept {
+                      std::uint32_t streamID) noexcept {
         /*
          * makes a derived state vector, Vout, from the mother state vector Vin
          * by skipping a large number of steps, determined by the given seeding ID's
@@ -431,6 +436,7 @@ class MixMaxRng {
      * Do not compile if state size is not valid
      */
     static_assert(M == LARGE || M == MEDIUM || M == SMALL, "State must be either 8, 17, 240");
+
    public:
 #ifndef __CUDA_ARCH__
     friend std::ostream& operator<<(std::ostream& os, const MixMaxRng& rng) {

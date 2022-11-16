@@ -2,6 +2,11 @@ include(CheckLanguage)
 
 option(GPU "Enable GPU" OFF)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_VERBOSE_MAKEFILE ON)
+set(DCMAKE_RULE_MESSAGES ON)
+
+
 if ("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     message(STATUS "Using C++23 standard")
     set(CMAKE_CXX_STANDARD 23)

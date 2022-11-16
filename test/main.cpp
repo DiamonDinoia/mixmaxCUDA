@@ -11,7 +11,7 @@
 #include <functional>
 #include <random>
 
-constexpr auto ITERATIONS = 1ULL << 30;
+constexpr auto ITERATIONS = 1ULL << 31;
 constexpr auto RUNS       = 5;
 
 const auto seed1          = std::random_device()();
@@ -34,7 +34,7 @@ double test_original() {
 }
 
 double test_opt() {
-    MIXMAX::MixMaxRng240 rng{seed1, seed2, seed3, seed4};
+    MIXMAX::MixMaxRng17 rng{seed1, seed2, seed3, seed4};
     uint64_t result;
     auto start = std::chrono::steady_clock::now();
     for (auto i = 0ULL; i < ITERATIONS; ++i) {
@@ -89,8 +89,8 @@ void Benchmack(std::function<double()> func, const std::string& message) {
 }
 
 int main(int argc, char** argv) {
-    test_seeding();
-    Benchmack(test_original, "ORIGINAL");
+//    test_seeding();
+//    Benchmack(test_original, "ORIGINAL");
     Benchmack(test_opt, "OPTIMIZED");
     return 0;
 }
