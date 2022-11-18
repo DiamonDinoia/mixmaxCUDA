@@ -13,4 +13,4 @@ jobs:
         source: '.'
         exclude: ''
         extensions: 'h,cpp'
-        clangFormatVersion: 10
+        clangFormatVersion: 14
