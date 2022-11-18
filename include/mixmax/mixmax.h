@@ -17,7 +17,7 @@ namespace MIXMAX {
 #endif
 
 #define MIXMAX_STRINGIFY_(...) #__VA_ARGS__
-#define MIXMAX_STRINGIFY(...) MIXMAX_STRINGIFY_(__VA_ARGS__)
+#define MIXMAX_STRINGIFY(...)  MIXMAX_STRINGIFY_(__VA_ARGS__)
 #if defined(__CUDA_ARCH__) || defined(__clang__) || defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)
 #define MIXMAX_GCC
 #elif defined(__GNUC__) || defined(__GNUG__)
@@ -33,9 +33,9 @@ namespace MIXMAX {
 #ifdef __CUDACC__
 
 #define MIXMAX_HOST_AND_DEVICE __host__ __device__
-#define MIXMAX_HOST __host__
-#define MIXMAX_DEVICE __device__
-#define MIXMAX_KERNEL __global__
+#define MIXMAX_HOST            __host__
+#define MIXMAX_DEVICE          __device__
+#define MIXMAX_KERNEL          __global__
 
 #else
 
@@ -53,7 +53,7 @@ enum { SMALL = 8, MEDIUM = 17, LARGE = 240 };
 /**
  * Figure of merit is entropy: best generator overall is N=240
  * Vector size  | period q
- *     N        | log10(q)  |   entropy
+ *       N      | log10(q)  |   entropy
  *              |
  * ------------------------------------|
  *       8      |    129    |    220.4 |
@@ -109,9 +109,7 @@ class MixMaxRng {
      */
     MIXMAX_HOST_AND_DEVICE
     inline MIXMAX_CONSTEXPR std::uint64_t operator()() noexcept {
-        if (m_Counter == N) {
-            updateState();
-        }
+        if (m_Counter == N) { updateState(); }
         return m_State[m_Counter++];
     }
 
@@ -133,25 +131,19 @@ class MixMaxRng {
     MIXMAX_HOST_AND_DEVICE
     MIXMAX_CONSTEXPR MixMaxRng(const uint64_t* state, uint64_t sum_over_new, uint32_t counter)
         : m_SumOverNew(sum_over_new), m_Counter(counter) {
-        for (auto i = 0; i < N; ++i) {
-            m_State[i] = state[i];
-        }
+        for (auto i = 0; i < N; ++i) { m_State[i] = state[i]; }
     }
 
 #ifdef __CUDA_ARCH__
     MIXMAX_HOST_AND_DEVICE
     constexpr MixMaxRng(MixMaxRng const& other) : m_SumOverNew(other.m_SumOverNew), m_Counter(other.m_Counter) {
         static_assert(N == other.N, "Cannot assign two instances with different state size");
-        for (auto i = 0; i < N; ++i) {
-            m_State[i] = other.m_State[i];
-        }
+        for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
     }
     MIXMAX_HOST_AND_DEVICE
     constexpr MixMaxRng(MixMaxRng&& other) noexcept : m_SumOverNew(other.m_SumOverNew), m_Counter(other.m_Counter) {
         static_assert(N == other.N, "Cannot assign two instances with different state size");
-        for (auto i = 0; i < N; ++i) {
-            m_State[i] = other.m_State[i];
-        }
+        for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
     }
 
     MIXMAX_HOST_AND_DEVICE
@@ -159,23 +151,17 @@ class MixMaxRng {
         static_assert(N == other.N, "Cannot assign two instances with different state size");
         m_SumOverNew = other.m_SumOverNew;
         m_Counter    = other.m_Counter;
-        for (auto i = 0; i < N; ++i) {
-            m_State[i] = other.m_State[i];
-        }
+        for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
         return *this;
     }
 
     MIXMAX_HOST_AND_DEVICE
     MIXMAX_CONSTEXPR MixMaxRng& operator=(const MixMaxRng& other) {
         static_assert(N == other.N, "Cannot assign two instances with different state size");
-        if (this == other) {
-            return *this;
-        }
+        if (this == other) { return *this; }
         m_SumOverNew = other.m_SumOverNew;
         m_Counter    = other.m_Counter;
-        for (auto i = 0; i < N; ++i) {
-            m_State[i] = other.m_State[i];
-        }
+        for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
         return *this;
     }
 #else
@@ -190,13 +176,13 @@ class MixMaxRng {
     static constexpr double INV_MERSBASE{0.43368086899420177360298E-18};
     // The state is M-1 because the last element is stored in the variable m_SumOverNew outside the vector
     //    enum { N = M - 1, BITS = 61U, M61 = 0x1FFFFFFFFFFFFFFF };
-    static constexpr std::uint8_t N{M - 1};
-    static constexpr std::uint8_t BITS{61U};
+    static constexpr std::uint8_t  N{M - 1};
+    static constexpr std::uint8_t  BITS{61U};
     static constexpr std::uint64_t M61{0x1FFFFFFFFFFFFFFF};
     // RNG state
     std::uint64_t m_State[N];
     std::uint64_t m_SumOverNew;
-    std::uint8_t m_Counter;
+    std::uint8_t  m_Counter;
 
     /**
      * Table of parameters for MIXMAX
@@ -344,33 +330,21 @@ class MixMaxRng {
         const std::uint64_t* skipMat[128];
 
         for (int i = 0; i < 128; i++) {
-            if MIXMAX_CONSTEXPR (M == SMALL) {
-                skipMat[i] = skipMatrix8[i];
-            }
-            if MIXMAX_CONSTEXPR (M == MEDIUM) {
-                skipMat[i] = skipMatrix17[i];
-            }
-            if MIXMAX_CONSTEXPR (M == LARGE) {
-                skipMat[i] = skipMat240[i];
-            }
+            if MIXMAX_CONSTEXPR (M == SMALL) { skipMat[i] = skipMatrix8[i]; }
+            if MIXMAX_CONSTEXPR (M == MEDIUM) { skipMat[i] = skipMatrix17[i]; }
+            if MIXMAX_CONSTEXPR (M == LARGE) { skipMat[i] = skipMat240[i]; }
         }
 
         m_SumOverNew = 1;
-        for (int i = 0; i < N; i++) {
-            m_State[i] = 0;
-        }
-        u_int32_t idVector[4] = {streamID, runID, machineID, clusterID};
+        for (int i = 0; i < N; i++) { m_State[i] = 0; }
+        u_int32_t     idVector[4] = {streamID, runID, machineID, clusterID};
         std::uint64_t cumulativeVector[M];
         for (auto idIndex = 0; idIndex < 4; idIndex++) {  // go from lower order to higher order ID
             auto currentID = idVector[idIndex], skipIndex = 0U;
             for (; currentID > 0; currentID >>= 1, skipIndex++) {  // bring up the r-th bit in the ID
-                if (!(currentID & 1)) {
-                    continue;
-                }
+                if (!(currentID & 1)) { continue; }
                 const auto& skipVector = skipMat[skipIndex + idIndex * 8 * sizeof(std::uint32_t)];
-                for (int i = 0; i < M; i++) {
-                    cumulativeVector[i] = 0;
-                }
+                for (int i = 0; i < M; i++) { cumulativeVector[i] = 0; }
                 for (auto j = 0; j < M; j++) {  // j is lag, enumerates terms of the poly
                     // for zero lag Y is already given
                     const auto skipElement = skipVector[j];  // same skipElement for all i
@@ -381,9 +355,7 @@ class MixMaxRng {
                     updateState();
                 }
                 m_SumOverNew = cumulativeVector[0];
-                for (auto i = 0; i < N; i++) {
-                    m_State[i] = cumulativeVector[i + 1];
-                }
+                for (auto i = 0; i < N; i++) { m_State[i] = cumulativeVector[i + 1]; }
             }
         }
         m_Counter = 0;
@@ -394,9 +366,7 @@ class MixMaxRng {
      */
     MIXMAX_HOST_AND_DEVICE
     void seedZero() noexcept {
-        for (auto& element : m_State) {
-            element = 1;
-        }
+        for (auto& element : m_State) { element = 1; }
         m_SumOverNew = 1;
         updateState();
         // Skip the first element
@@ -407,8 +377,8 @@ class MixMaxRng {
      * a 64-bit LCG from Knuth line 26, in combination with a bit swap is used to seed
      */
     void seedLCG(std::uint64_t seed) noexcept {
-        static constexpr std::uint64_t MULT64 = 6364136223846793005ULL;
-        std::uint64_t overflow                = 0;
+        static constexpr std::uint64_t MULT64   = 6364136223846793005ULL;
+        std::uint64_t                  overflow = 0;
         seed *= MULT64;
         seed         = (seed << 32) ^ (seed >> 32);
         m_SumOverNew = seed & M61;
@@ -441,9 +411,7 @@ class MixMaxRng {
 #ifndef __CUDA_ARCH__
     friend std::ostream& operator<<(std::ostream& os, const MixMaxRng& rng) {
         os << "V: ";
-        for (const auto& elem : rng.m_State) {
-            os << elem << " ";
-        }
+        for (const auto& elem : rng.m_State) { os << elem << " "; }
         os << " counter: " << static_cast<u_int32_t>(rng.m_counter) << " SumOverNew: " << rng.m_SumOverNew;
         return os;
     }

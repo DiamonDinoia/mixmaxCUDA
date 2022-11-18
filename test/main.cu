@@ -63,8 +63,8 @@ __global__ void initialize_rngs(uint64_t seed, T* curand_rngs) {
 
 template <typename T>
 __global__ void rngKernel(T* rngs, double* results) {
-    auto idx     = std::is_same<curandStateMtgp32, T>() ? blockIdx.x : blockIdx.x * blockDim.x + threadIdx.x;
-    auto rng     = rngs[idx];
+    auto   idx   = std::is_same<curandStateMtgp32, T>() ? blockIdx.x : blockIdx.x * blockDim.x + threadIdx.x;
+    auto   rng   = rngs[idx];
     double value = 0;
     for (long i = 0; i < ITERATIONS; ++i) {
         if constexpr (std::is_same<curandStateMtgp32, T>()) {
@@ -79,9 +79,7 @@ __global__ void rngKernel(T* rngs, double* results) {
 template <typename T>
 T stdev(const std::vector<T>& vec) {
     const size_t sz = vec.size();
-    if (sz == 1) {
-        return 0.0;
-    }
+    if (sz == 1) { return 0.0; }
     // Calculate the mean
     const T mean = std::accumulate(vec.begin(), vec.end(), 0.0) / sz;
     // Now calculate the variance
@@ -93,10 +91,9 @@ T stdev(const std::vector<T>& vec) {
 
 template <typename T>
 void Benchmack(const std::string& message, const uint64_t threads, const uint64_t blocks, const uint64_t seed) {
-
-    const auto size = threads * blocks;
-    T* gpuRGNs;
-    double* results;
+    const auto            size = threads * blocks;
+    T*                    gpuRGNs;
+    double*               results;
     mtgp32_kernel_params* devKernelParams;
     CUDA_CALL(cudaMalloc(&results, sizeof(double) * size));
 
@@ -112,8 +109,8 @@ void Benchmack(const std::string& message, const uint64_t threads, const uint64_
     }
 
     std::vector<double> times;
-    double total_time = 0.;
-    cudaEvent_t start, stop;
+    double              total_time = 0.;
+    cudaEvent_t         start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     times.reserve(RUNS);
@@ -133,17 +130,13 @@ void Benchmack(const std::string& message, const uint64_t threads, const uint64_
     CUDA_CALL(cudaFree(results));
     CUDA_CALL(cudaEventDestroy(start));
     CUDA_CALL(cudaEventDestroy(stop));
-    if constexpr (std::is_same<curandStateMtgp32, T>()) {
-        CUDA_CALL(cudaFree(devKernelParams));
-    }
+    if constexpr (std::is_same<curandStateMtgp32, T>()) { CUDA_CALL(cudaFree(devKernelParams)); }
     std::cout << message << " required " << total_time / RUNS << "+-" << stdev(times) << " ms" << std::endl;
 }
 
 __global__ void runRNG(uint64_t* results, uint32_t seed1, uint32_t seed2, uint32_t seed3, uint32_t seed4) {
     MIXMAX::MixMaxRng240 rng{seed1, seed2, seed3, seed4};
-    for (uint64_t i = 0; i < TESTS; ++i) {
-        results[i] = rng();
-    }
+    for (uint64_t i = 0; i < TESTS; ++i) { results[i] = rng(); }
 }
 
 void check_result() {
@@ -151,7 +144,7 @@ void check_result() {
     const auto seed2 = std::random_device()();
     const auto seed3 = std::random_device()();
     const auto seed4 = std::random_device()();
-    uint64_t* gpu_results;
+    uint64_t*  gpu_results;
     CUDA_CALL(cudaMalloc(&gpu_results, sizeof(uint64_t) * TESTS));
     runRNG<<<1, 1>>>(gpu_results, seed1, seed2, seed3, seed4);
     CUDA_CALL(cudaDeviceSynchronize());
@@ -172,9 +165,9 @@ void check_result() {
 
 int main(const int argc, const char** argv) {
     check_result();
-    const auto seed = std::random_device()();
-    auto threads    = 128;
-    auto blocks     = 82 * 12;
+    const auto seed    = std::random_device()();
+    auto       threads = 128;
+    auto       blocks  = 82 * 12;
     std::cout << "Using seed " << seed << std::endl;
     std::cout << "Using blocks " << blocks << " threads " << threads << std::endl;
     Benchmack<GPURandom<curandStatePhilox4_32_10>>("Philox4_32_10", threads, blocks, seed);
