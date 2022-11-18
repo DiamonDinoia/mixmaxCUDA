@@ -14,12 +14,13 @@
 constexpr auto ITERATIONS = 1ULL << 31;
 constexpr auto RUNS       = 5;
 
-const auto     seed1      = std::random_device()();
-const auto     seed2      = std::random_device()();
-const auto     seed3      = std::random_device()();
-const auto     seed4      = std::random_device()();
-
-double         test_original() {
+//
+const auto seed1 = std::random_device()();
+const auto seed2 = std::random_device()();
+const auto seed3 = std::random_device()();
+const auto seed4 = std::random_device()();
+//
+double test_original() {
     mixmax_engine gen{seed1, seed2, seed3, seed4};
     uint64_t      result;
     auto          start = std::chrono::steady_clock::now();
@@ -81,8 +82,8 @@ void Benchmack(std::function<double()> func, const std::string& message) {
 }
 
 int main(int argc, char** argv) {
-    //    test_seeding();
-    //    Benchmack(test_original, "ORIGINAL");
+    test_seeding();
+    Benchmack(test_original, "ORIGINAL");
     Benchmack(test_opt, "OPTIMIZED");
     return 0;
 }
