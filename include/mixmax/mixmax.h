@@ -149,6 +149,7 @@ class MixMaxRng {
     MIXMAX_HOST_AND_DEVICE
     MIXMAX_CONSTEXPR MixMaxRng& operator=(MixMaxRng&& other) noexcept {
         static_assert(N == other.N, "Cannot assign two instances with different state size");
+        if (this == &other) { return *this; }
         m_SumOverNew = other.m_SumOverNew;
         m_Counter    = other.m_Counter;
         for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
@@ -158,10 +159,7 @@ class MixMaxRng {
     MIXMAX_HOST_AND_DEVICE
     MIXMAX_CONSTEXPR MixMaxRng& operator=(const MixMaxRng& other) {
         static_assert(N == other.N, "Cannot assign two instances with different state size");
-        if (this == other) { return *this; }
-        m_SumOverNew = other.m_SumOverNew;
-        m_Counter    = other.m_Counter;
-        for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
+        *this = std::move(MixMaxRng(other));
         return *this;
     }
 #else
