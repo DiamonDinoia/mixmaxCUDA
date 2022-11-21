@@ -22,11 +22,16 @@ namespace MIXMAX {
 #define MIXMAX_GCC
 #elif defined(__GNUC__) || defined(__GNUG__)
 #define MIXMAX_GCC GCC
+
 #endif
+
 #if defined(__NVCC_DIAG_PRAGMA_SUPPORT__)
 #pragma nv_diag_suppress 1675
+#pragma nv_diag_suppress 20012
 #elif defined(__CUDA_ARCH__)
 #pragma diag_suppress 1675
+#pragma nv_diag_suppress 20012
+
 #endif
 #define MIXMAX_UNROLL(...) _Pragma(MIXMAX_STRINGIFY(MIXMAX_GCC unroll __VA_ARGS__))
 
@@ -134,40 +139,14 @@ class MixMaxRng {
         for (auto i = 0; i < N; ++i) { m_State[i] = state[i]; }
     }
 
-#ifdef __CUDA_ARCH__
     MIXMAX_HOST_AND_DEVICE
-    constexpr MixMaxRng(MixMaxRng const& other) : m_SumOverNew(other.m_SumOverNew), m_Counter(other.m_Counter) {
-        static_assert(N == other.N, "Cannot assign two instances with different state size");
-        for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
-    }
-    MIXMAX_HOST_AND_DEVICE
-    constexpr MixMaxRng(MixMaxRng&& other) noexcept : m_SumOverNew(other.m_SumOverNew), m_Counter(other.m_Counter) {
-        static_assert(N == other.N, "Cannot assign two instances with different state size");
-        for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
-    }
-
-    MIXMAX_HOST_AND_DEVICE
-    MIXMAX_CONSTEXPR MixMaxRng& operator=(MixMaxRng&& other) noexcept {
-        static_assert(N == other.N, "Cannot assign two instances with different state size");
-        if (this == &other) { return *this; }
-        m_SumOverNew = other.m_SumOverNew;
-        m_Counter    = other.m_Counter;
-        for (auto i = 0; i < N; ++i) { m_State[i] = other.m_State[i]; }
-        return *this;
-    }
-
-    MIXMAX_HOST_AND_DEVICE
-    MIXMAX_CONSTEXPR MixMaxRng& operator=(const MixMaxRng& other) {
-        static_assert(N == other.N, "Cannot assign two instances with different state size");
-        *this = std::move(MixMaxRng(other));
-        return *this;
-    }
-#else
     constexpr MixMaxRng(MixMaxRng const& other) = default;
+    MIXMAX_HOST_AND_DEVICE
     constexpr MixMaxRng(MixMaxRng&& other) noexcept = default;
+    MIXMAX_HOST_AND_DEVICE
     MIXMAX_CONSTEXPR MixMaxRng& operator=(MixMaxRng&& other) noexcept = default;
+    MIXMAX_HOST_AND_DEVICE
     MIXMAX_CONSTEXPR MixMaxRng& operator=(MixMaxRng const& other) = default;
-#endif
 
    private:
     // Constants
@@ -435,8 +414,11 @@ using MixMaxRng240 = internal::MixMaxRng<internal::LARGE>;
 #undef MIXMAX_GCC
 #if defined(__NVCC_DIAG_PRAGMA_SUPPORT__)
 #pragma nv_diag_default 1675
+#pragma nv_diag_default 20012
 #elif defined(__CUDA_ARCH__)
 #pragma diag_default 1675
+#pragma diag_default 20012
+
 #endif
 #endif
 
